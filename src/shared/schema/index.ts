@@ -1,0 +1,9 @@
+export { adEntity } from './marketing/ad-entity.js';
+export { adPerformanceDaily } from './marketing/ad-performance-daily.js';
+export { attributionTouch } from './marketing/attribution-touch.js';
+export { conversion } from './marketing/conversion.js';
+export { identityLink } from './marketing/identity-link.js';
+export { decision } from './marketing/decision.js';
+export { geoObservation } from './marketing/geo-observation.js';
+export { seoSignal } from './marketing/seo-signal.js';
+export { alert } from './marketing/alert.js';

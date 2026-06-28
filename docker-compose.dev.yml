@@ -1,0 +1,21 @@
+# Local-only Postgres (pgvector) + Redis for development and integration tests.
+# Production uses Supabase (now) / E2E managed Postgres (later) via DATABASE_URL.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mil
+      POSTGRES_PASSWORD: mil
+      POSTGRES_DB: mil
+    ports:
+      - '5432:5432'
+    volumes:
+      - mil_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+volumes:
+  mil_pgdata:

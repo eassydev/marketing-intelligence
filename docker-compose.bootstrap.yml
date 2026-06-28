@@ -1,0 +1,31 @@
+# TEMPORARY bootstrap override: bundles a local pgvector Postgres so the box can
+# run BEFORE Supabase is ready. Compose merges this over the prod file:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.bootstrap.yml up -d
+# Cut over to Supabase later: set DATABASE_URL in .env.production, then run with
+# ONLY -f docker-compose.prod.yml and re-run the migration. Data here is
+# schema-only at this stage, so the cutover is lossless.
+services:
+  mil:
+    environment:
+      DATABASE_URL: postgresql://mil:${MIL_PG_PASSWORD:-milpw}@postgres:5432/mil
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mil
+      POSTGRES_PASSWORD: ${MIL_PG_PASSWORD:-milpw}
+      POSTGRES_DB: mil
+    volumes:
+      - mil_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mil -d mil']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mil_pgdata:

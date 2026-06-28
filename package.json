@@ -1,0 +1,45 @@
+{
+  "name": "marketing-intelligence",
+  "version": "0.1.0",
+  "description": "Eassylife Marketing Intelligence Layer (MIL) — ad ingestion, in-house attribution, action-ready seams",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "migrate": "tsx scripts/migrate.ts",
+    "migrate:generate": "drizzle-kit generate",
+    "check-env": "tsx scripts/check-env.ts",
+    "seed": "tsx scripts/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^12.0.0",
+    "@fastify/rate-limit": "^10.0.0",
+    "bullmq": "^5.0.0",
+    "drizzle-orm": "^0.38.0",
+    "fastify": "^5.0.0",
+    "ioredis": "^5.4.0",
+    "pg": "^8.13.0",
+    "pino": "^9.0.0",
+    "uuid": "^11.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^10.13.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "drizzle-kit": "^0.30.0",
+    "ioredis-mock": "^8.9.0",
+    "pino-pretty": "^11.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
