@@ -9,3 +9,6 @@ coverage/
 .idea/
 .vscode/
 *.tsbuildinfo
+
+# local DB backups (not code)
+backups/
