@@ -44,6 +44,32 @@ export const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-haiku-4-5'),
 
+  // GEO/AI-presence monitor (Module A). Engine keys are optional — an engine
+  // without a key is simply skipped (mirrors the connector factory pattern).
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
+  PERPLEXITY_API_KEY: z.string().optional(),
+  PERPLEXITY_MODEL: z.string().default('sonar'),
+  MIL_BRAND_ALIASES: z
+    .string()
+    .default('eassylife,eassy life,eassy.life')
+    .transform(csv)
+    .pipe(z.array(z.string()).nonempty()),
+  MIL_GEO_CITIES: z
+    .string()
+    .default('bangalore,mumbai,delhi,pune,hyderabad')
+    .transform(csv)
+    .pipe(z.array(z.string()).nonempty()),
+  MIL_GEO_CATEGORIES: z
+    .string()
+    .default('home cleaning,plumbing,electrician,appliance repair,pest control')
+    .transform(csv)
+    .pipe(z.array(z.string()).nonempty()),
+  // Hard cost cap: max engine questions generated per run (per engine).
+  MIL_GEO_MAX_QUESTIONS: z.coerce.number().int().positive().default(40),
+
   // Parked-slice credentials — optional now; each slice validates its own at use.
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),

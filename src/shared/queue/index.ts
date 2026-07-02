@@ -25,6 +25,7 @@ export const ingestMetaQueue = new Queue('mil-ingest-meta', { connection });
 export const ingestGoogleQueue = new Queue('mil-ingest-google', { connection });
 export const attributionQueue = new Queue('mil-attribution-resolve', { connection });
 export const alertQueue = new Queue('mil-alerts-evaluate', { connection });
+export const geoMonitorQueue = new Queue('mil-geo-monitor', { connection });
 
 const workers: Worker[] = [];
 
@@ -78,6 +79,21 @@ export function startWorkers(): Worker[] {
   );
   workers.push(alertWorker);
 
+  const geoWorker = new Worker(
+    'mil-geo-monitor',
+    async (job) => {
+      // runGeoMonitor no-ops with a log when buildEngines() is empty (no keys).
+      const { runGeoMonitor } = await import('../../marketing/geo/run.js');
+      log.info({ jobId: job.id }, 'running geo monitor');
+      return runGeoMonitor();
+    },
+    { connection, concurrency: 1 },
+  );
+  geoWorker.on('failed', (job, err) =>
+    log.error({ queue: 'mil-geo-monitor', jobId: job?.id, err }, 'job failed'),
+  );
+  workers.push(geoWorker);
+
   log.info({ count: workers.length }, 'BullMQ workers started');
   return workers;
 }
@@ -103,6 +119,12 @@ export async function setupRecurringJobs(): Promise<void> {
     'alerts-evaluate',
     { pattern: '5 * * * *', tz },
     { name: 'alerts-evaluate', data: {}, opts: defaultJobOptions },
+  );
+  // Weekly (Mon 03:30 IST): AI answers move slowly and every run costs tokens.
+  await geoMonitorQueue.upsertJobScheduler(
+    'geo-monitor',
+    { pattern: '30 3 * * 1', tz },
+    { name: 'geo-monitor', data: {}, opts: defaultJobOptions },
   );
   log.info('Recurring jobs scheduled');
 }

@@ -1,6 +1,18 @@
 import type { AppKind } from '../../shared/types/app.js';
 import type { CacSummary } from '../serving/queries.js';
 
+/** Compact GEO/AI-presence summary (Module A) for the LLM seam. */
+export interface GeoSnapshot {
+  window: { from: string; to: string };
+  totalObservations: number;
+  byEngine: Array<{
+    engine: string;
+    observations: number;
+    mentions: number;
+    mentionRate: number | null;
+  }>;
+}
+
 export interface MarketingState {
   app: AppKind;
   window: { from: string; to: string };
@@ -12,7 +24,7 @@ export interface MarketingState {
     costPerFirstOrderInr: number | null;
   }>;
   anomalies: unknown[]; // populated by Module B (alert layer) — empty now
-  geoSnapshot: null; // placeholder for Module A (GEO monitor) — typed, always null now
+  geoSnapshot: GeoSnapshot | null; // Module A summary; null until observations exist
 }
 
 export interface SerializeInput {
@@ -20,6 +32,7 @@ export interface SerializeInput {
   window: { from: string; to: string };
   cac: CacSummary;
   costPerFirstOrder: Array<Record<string, unknown>>;
+  geo?: GeoSnapshot | null;
 }
 
 /**
@@ -44,6 +57,6 @@ export function serializeMarketingState(input: SerializeInput): MarketingState {
         r.cost_per_first_order_inr == null ? null : Number(r.cost_per_first_order_inr),
     })),
     anomalies: [],
-    geoSnapshot: null,
+    geoSnapshot: input.geo ?? null,
   };
 }
