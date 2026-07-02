@@ -40,6 +40,8 @@ export const conversion = marketing.table(
     attributionModel: text('attribution_model'), // 'last_touch' (default)
     attributionOutcome: text('attribution_outcome'), // matched | organic | no_touch
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    // Meta CAPI upload marker — set once the row is pushed to the /events API.
+    capiUploadedAt: timestamp('capi_uploaded_at', { withTimezone: true }),
   },
   (t) => [
     uniqueIndex('uq_conversion_order').on(t.app, t.orderId),
@@ -50,6 +52,10 @@ export const conversion = marketing.table(
     index('idx_conversion_entity')
       .on(t.app, t.attributedEntityId)
       .where(sql`attributed_entity_id is not null`),
+    // CAPI job work queue: resolved purchases not yet uploaded to Meta.
+    index('idx_conversion_capi_pending')
+      .on(t.app, t.occurredAt)
+      .where(sql`capi_uploaded_at is null and resolved_at is not null`),
     check('conversion_app_chk', sql`${t.app} in ('services','society')`),
   ],
 );

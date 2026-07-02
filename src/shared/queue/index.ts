@@ -26,6 +26,7 @@ export const ingestGoogleQueue = new Queue('mil-ingest-google', { connection });
 export const attributionQueue = new Queue('mil-attribution-resolve', { connection });
 export const alertQueue = new Queue('mil-alerts-evaluate', { connection });
 export const geoMonitorQueue = new Queue('mil-geo-monitor', { connection });
+export const capiMetaQueue = new Queue('mil-capi-meta', { connection });
 
 const workers: Worker[] = [];
 
@@ -94,6 +95,21 @@ export function startWorkers(): Worker[] {
   );
   workers.push(geoWorker);
 
+  const capiWorker = new Worker(
+    'mil-capi-meta',
+    async (job) => {
+      // runCapiUpload no-ops with a log when META_CAPI_ENABLED is false.
+      const { runCapiUpload } = await import('../../marketing/capi/upload-job.js');
+      log.info({ jobId: job.id }, 'running Meta CAPI upload');
+      return runCapiUpload();
+    },
+    { connection, concurrency: 1 },
+  );
+  capiWorker.on('failed', (job, err) =>
+    log.error({ queue: 'mil-capi-meta', jobId: job?.id, err }, 'job failed'),
+  );
+  workers.push(capiWorker);
+
   log.info({ count: workers.length }, 'BullMQ workers started');
   return workers;
 }
@@ -125,6 +141,13 @@ export async function setupRecurringJobs(): Promise<void> {
     'geo-monitor',
     { pattern: '30 3 * * 1', tz },
     { name: 'geo-monitor', data: {}, opts: defaultJobOptions },
+  );
+  // 20 min after ingest-meta/resolve so attribution has settled. No-ops while
+  // META_CAPI_ENABLED is false, so this is safe to schedule now.
+  await capiMetaQueue.upsertJobScheduler(
+    'capi-meta',
+    { pattern: '35 */3 * * *', tz },
+    { name: 'capi-meta', data: {}, opts: defaultJobOptions },
   );
   log.info('Recurring jobs scheduled');
 }

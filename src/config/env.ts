@@ -77,6 +77,15 @@ export const envSchema = z.object({
   META_AD_ACCOUNT_ID: z.string().optional(),
   META_GRAPH_VERSION: z.string().default('v21.0'),
 
+  // Meta Conversions API (Phase F) — server-side Purchase upload. Dark by
+  // default; reuses META_ACCESS_TOKEN (system user) + META_GRAPH_VERSION.
+  META_CAPI_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  META_CAPI_DATASET_ID: z.string().default('1717873222070120'), // existing pixel id
+  META_CAPI_TEST_EVENT_CODE: z.string().optional(), // Meta "Test Events" mode
+
   GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
   GOOGLE_ADS_CLIENT_ID: z.string().optional(),
   GOOGLE_ADS_CLIENT_SECRET: z.string().optional(),
