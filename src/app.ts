@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { servingRoutes } from './marketing/serving/routes.js';
 import { ingestRoutes } from './marketing/ingest/routes.js';
@@ -51,12 +52,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  await app.register(servingRoutes);
-  await app.register(ingestRoutes);
-  await app.register(decisionsRoutes);
-  await app.register(alertsRoutes);
-  await app.register(insightsRoutes);
-
+  // Register the error handler BEFORE the route plugins so the encapsulated
+  // route contexts inherit it. Set after registration, the child contexts keep
+  // Fastify's default handler and thrown ZodErrors surface as 500 instead of 400.
   app.setErrorHandler(
     (error: Error & { validation?: unknown; statusCode?: number }, _request, reply) => {
       if (error.validation) {
@@ -66,10 +64,16 @@ export async function buildApp(): Promise<FastifyInstance> {
           details: error.validation,
         });
       }
-      if (error.name === 'ZodError') {
+      // Zod parse failures thrown from route handlers (e.g. ingest body
+      // validation). `instanceof` is the primary check; the `name` fallback
+      // catches a ZodError thrown from a duplicate zod module copy where
+      // `instanceof` would miss. Returns 400 with the issues so producers can
+      // see exactly what failed instead of an opaque 500.
+      if (error instanceof ZodError || error.name === 'ZodError') {
         return reply.status(400).send({
           error: 'Validation Error',
           message: 'Invalid request data',
+          issues: (error as ZodError).issues,
         });
       }
       app.log.error(error);
@@ -80,6 +84,12 @@ export async function buildApp(): Promise<FastifyInstance> {
       });
     },
   );
+
+  await app.register(servingRoutes);
+  await app.register(ingestRoutes);
+  await app.register(decisionsRoutes);
+  await app.register(alertsRoutes);
+  await app.register(insightsRoutes);
 
   return app;
 }
