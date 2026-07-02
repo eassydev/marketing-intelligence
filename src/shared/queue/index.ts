@@ -20,12 +20,16 @@ export const defaultJobOptions = {
   removeOnFail: false,
 };
 
+// Every queue name is namespaced by MIL_QUEUE_PREFIX (default 'mil') so multiple
+// MIL instances can share a single Redis without colliding on BullMQ keys.
+const qn = (suffix: string): string => `${env.MIL_QUEUE_PREFIX}-${suffix}`;
+
 // === Queues ===
-export const ingestMetaQueue = new Queue('mil-ingest-meta', { connection });
-export const ingestGoogleQueue = new Queue('mil-ingest-google', { connection });
-export const attributionQueue = new Queue('mil-attribution-resolve', { connection });
-export const alertQueue = new Queue('mil-alerts-evaluate', { connection });
-export const geoMonitorQueue = new Queue('mil-geo-monitor', { connection });
+export const ingestMetaQueue = new Queue(qn('ingest-meta'), { connection });
+export const ingestGoogleQueue = new Queue(qn('ingest-google'), { connection });
+export const attributionQueue = new Queue(qn('attribution-resolve'), { connection });
+export const alertQueue = new Queue(qn('alerts-evaluate'), { connection });
+export const geoMonitorQueue = new Queue(qn('geo-monitor'), { connection });
 
 const workers: Worker[] = [];
 
@@ -48,11 +52,11 @@ function ingestWorker(name: string, channel: Channel): Worker {
 }
 
 export function startWorkers(): Worker[] {
-  workers.push(ingestWorker('mil-ingest-meta', 'meta'));
-  workers.push(ingestWorker('mil-ingest-google', 'google'));
+  workers.push(ingestWorker(qn('ingest-meta'), 'meta'));
+  workers.push(ingestWorker(qn('ingest-google'), 'google'));
 
   const resolveWorker = new Worker(
-    'mil-attribution-resolve',
+    qn('attribution-resolve'),
     async (job) => {
       const { runResolver } = await import('../../marketing/attribution/resolve.js');
       log.info({ jobId: job.id }, 'running resolver');
@@ -61,12 +65,12 @@ export function startWorkers(): Worker[] {
     { connection, concurrency: 1 },
   );
   resolveWorker.on('failed', (job, err) =>
-    log.error({ queue: 'mil-attribution-resolve', jobId: job?.id, err }, 'job failed'),
+    log.error({ queue: qn('attribution-resolve'), jobId: job?.id, err }, 'job failed'),
   );
   workers.push(resolveWorker);
 
   const alertWorker = new Worker(
-    'mil-alerts-evaluate',
+    qn('alerts-evaluate'),
     async (job) => {
       const { runAlertEvaluation } = await import('../../marketing/alerts/evaluate.js');
       log.info({ jobId: job.id }, 'running alert evaluation');
@@ -75,12 +79,12 @@ export function startWorkers(): Worker[] {
     { connection, concurrency: 1 },
   );
   alertWorker.on('failed', (job, err) =>
-    log.error({ queue: 'mil-alerts-evaluate', jobId: job?.id, err }, 'job failed'),
+    log.error({ queue: qn('alerts-evaluate'), jobId: job?.id, err }, 'job failed'),
   );
   workers.push(alertWorker);
 
   const geoWorker = new Worker(
-    'mil-geo-monitor',
+    qn('geo-monitor'),
     async (job) => {
       // runGeoMonitor no-ops with a log when buildEngines() is empty (no keys).
       const { runGeoMonitor } = await import('../../marketing/geo/run.js');
@@ -90,7 +94,7 @@ export function startWorkers(): Worker[] {
     { connection, concurrency: 1 },
   );
   geoWorker.on('failed', (job, err) =>
-    log.error({ queue: 'mil-geo-monitor', jobId: job?.id, err }, 'job failed'),
+    log.error({ queue: qn('geo-monitor'), jobId: job?.id, err }, 'job failed'),
   );
   workers.push(geoWorker);
 
@@ -99,7 +103,7 @@ export function startWorkers(): Worker[] {
 }
 
 export async function setupRecurringJobs(): Promise<void> {
-  const tz = 'Asia/Kolkata';
+  const tz = env.MIL_CRON_TIMEZONE;
   await ingestMetaQueue.upsertJobScheduler(
     'ingest-meta',
     { pattern: '15 */3 * * *', tz },

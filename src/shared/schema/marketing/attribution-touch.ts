@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { bigint, text, boolean, jsonb, timestamp, index, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+import { bigint, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 
 /**
  * Click-ID / UTM touches — the attribution spine input. Click-ID columns are
@@ -42,6 +42,6 @@ export const attributionTouch = marketing.table(
     index('idx_touch_user')
       .on(t.app, t.userId, t.occurredAt.desc())
       .where(sql`user_id is not null`),
-    check('touch_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('touch_app_chk', t.app),
   ],
 );

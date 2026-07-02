@@ -28,7 +28,7 @@ async function countFirstOrders(app: AppKind, from: string, to: string): Promise
  * port. It surfaces decisions to a human; it never touches live spend.
  */
 export async function runAlertEvaluation(
-  app: AppKind = 'services',
+  app: AppKind = env.MIL_DEFAULT_APP,
 ): Promise<{ proposals: number; fired: number }> {
   const today = new Date();
   const to = fmt(today);

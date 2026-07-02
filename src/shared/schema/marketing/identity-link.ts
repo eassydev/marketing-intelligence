@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { bigint, text, timestamp, index, uniqueIndex, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+import { bigint, text, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 
 /**
  * Append-only session→user stitch ledger. When a server-side call (signup or
@@ -19,6 +19,6 @@ export const identityLink = marketing.table(
   (t) => [
     uniqueIndex('uq_identity_link').on(t.app, t.sessionId, t.userId),
     index('idx_identity_user').on(t.app, t.userId),
-    check('identity_link_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('identity_link_app_chk', t.app),
   ],
 );

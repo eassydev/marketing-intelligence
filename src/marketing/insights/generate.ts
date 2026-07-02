@@ -12,7 +12,7 @@ export interface Insights {
   state: MarketingState;
 }
 
-const SYSTEM = `You are a performance-marketing analyst for an Indian home-services marketplace. Given a compact JSON snapshot of marketing state, write 4-6 crisp bullet insights: blended CAC health, which campaigns are efficient vs wasteful (cost per first order), notable drops, and ONE prioritized recommendation. Amounts in INR. No preamble, just the bullets.`;
+const SYSTEM = `You are a performance-marketing analyst for a ${env.MIL_MARKET_DESCRIPTION}. Given a compact JSON snapshot of marketing state, write 4-6 crisp bullet insights: blended CAC health, which campaigns are efficient vs wasteful (cost per first order), notable drops, and ONE prioritized recommendation. Amounts in ${env.MIL_CURRENCY}. No preamble, just the bullets.`;
 
 /**
  * The AI brain over the serialize seam. Degrades gracefully to a deterministic

@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { text, numeric, jsonb, index, uniqueIndex, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol, createdAtCol, updatedAtCol } from './_shared.js';
+import { text, numeric, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, createdAtCol, updatedAtCol, appCheck } from './_shared.js';
 
 /** Normalized campaign/adset/ad tree, reconciled across Meta + Google. */
 export const adEntity = marketing.table(
@@ -27,6 +27,6 @@ export const adEntity = marketing.table(
     uniqueIndex('uq_ad_entity').on(t.app, t.channel, t.level, t.externalId),
     index('idx_ad_entity_channel_level').on(t.app, t.channel, t.level),
     index('idx_ad_entity_city_cat').on(t.app, t.city, t.category),
-    check('ad_entity_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('ad_entity_app_chk', t.app),
   ],
 );

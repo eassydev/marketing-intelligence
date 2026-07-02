@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { env } from '../src/config/env.js';
+const APP = env.MIL_DEFAULT_APP;
 import { serializeMarketingState } from '../src/marketing/context/serialize.js';
 
 describe('serializeMarketingState', () => {
   it('renders a compact, bounded structured state', () => {
     const state = serializeMarketingState({
-      app: 'services',
+      app: APP,
       window: { from: '2026-06-01', to: '2026-06-30' },
       cac: { spend_inr: 3000, first_orders: 1, all_orders: 2, blended_cac_inr: 3000 },
       costPerFirstOrder: Array.from({ length: 15 }, (_, i) => ({
@@ -29,7 +31,7 @@ describe('serializeMarketingState', () => {
 
   it('handles null cost-per-first-order', () => {
     const state = serializeMarketingState({
-      app: 'services',
+      app: APP,
       window: { from: '2026-06-01', to: '2026-06-30' },
       cac: { spend_inr: 0, first_orders: 0, all_orders: 0, blended_cac_inr: null },
       costPerFirstOrder: [{ campaign: 'x', spend_inr: 50, first_orders: 0, cost_per_first_order_inr: null }],

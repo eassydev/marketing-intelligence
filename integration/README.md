@@ -6,7 +6,8 @@ are **not** applied automatically because they touch the live payments flow and
 the mobile release pipeline. Review, adapt to current code, and ship behind the
 `MIL_PRODUCER_ENABLED` flag (shadow → reconcile → enable).
 
-Target MIL endpoint (internal VPC): `http://10.11.156.8:5100`
+Target MIL endpoint (internal VPC): `$MIL_INGEST_URL` (this instance's private host,
+e.g. `http://10.x.x.x:5100`).
 Auth: `Authorization: Bearer $MIL_INGEST_TOKEN` (the `INTERNAL_INGEST_TOKEN` value).
 
 ## 1. BackendNew — conversion producer
@@ -47,7 +48,7 @@ Deterministic ids only; NO fingerprinting. Fire only with marketing consent.
     var fbc = (document.cookie.match(/(^|;)\s*_fbc=([^;]+)/) || [])[2] || null;
     var fbp = (document.cookie.match(/(^|;)\s*_fbp=([^;]+)/) || [])[2] || null;
     var body = {
-      app: 'services', session_id: sid, consent: consent,
+      app: '<YOUR_APP>', /* this instance's MIL_DEFAULT_APP (e.g. 'services') */ session_id: sid, consent: consent,
       landing_url: location.href, referrer: document.referrer || null,
       gclid: consent ? read('gclid') : null, fbclid: consent ? read('fbclid') : null,
       gbraid: consent ? read('gbraid') : null, wbraid: consent ? read('wbraid') : null,
@@ -75,7 +76,7 @@ what stitches anonymous touches to the user (resolver tiers user_id → session_
 
 ## 4. BackendNew env
 ```
-MIL_INGEST_URL=http://10.11.156.8:5100
+MIL_INGEST_URL=http://<MIL_PRIVATE_HOST>:5100   # this instance's internal VPC host
 MIL_INGEST_TOKEN=<the MIL INTERNAL_INGEST_TOKEN>
 MIL_PRODUCER_ENABLED=false   # shadow first; flip true after reconciling counts
 ```

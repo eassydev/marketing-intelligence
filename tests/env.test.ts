@@ -37,4 +37,24 @@ describe('parseEnv', () => {
   it('rejects an invalid app in the enabled list', () => {
     expect(() => parseEnv({ ...base, MIL_ENABLED_APPS: 'services,bogus' })).toThrow();
   });
+
+  it('derives app defaults from MIL_APP_LIST when unset', () => {
+    const env = parseEnv({ ...base, MIL_APP_LIST: 'demo,beta' });
+    expect(env.MIL_APP_LIST).toEqual(['demo', 'beta']);
+    expect(env.MIL_DEFAULT_APP).toBe('demo'); // first app
+    expect(env.MIL_ENABLED_APPS).toEqual(['demo']); // [first app]
+  });
+
+  it('rejects MIL_DEFAULT_APP not in MIL_APP_LIST', () => {
+    expect(() =>
+      parseEnv({ ...base, MIL_APP_LIST: 'demo', MIL_DEFAULT_APP: 'services' }),
+    ).toThrow(/MIL_DEFAULT_APP/);
+  });
+
+  it('applies queue-prefix / currency / timezone defaults', () => {
+    const env = parseEnv(base);
+    expect(env.MIL_QUEUE_PREFIX).toBe('mil');
+    expect(env.MIL_CURRENCY).toBe('INR');
+    expect(env.MIL_CRON_TIMEZONE).toBe('Asia/Kolkata');
+  });
 });

@@ -1,3 +1,5 @@
+import { env } from '../../config/env.js';
+
 /**
  * The one place the `{city}_{category}_{objective}` campaign-naming convention
  * lives. Tolerant: missing segments return undefined, the raw name is preserved
@@ -30,13 +32,14 @@ export function microsToInr(micros: number | string): number {
 
 export class CurrencyError extends Error {
   constructor(channel: string, got: string) {
-    super(`${channel} account currency is ${got}, expected INR`);
+    super(`${channel} account currency is ${got}, expected ${env.MIL_CURRENCY}`);
     this.name = 'CurrencyError';
   }
 }
 
+/** Asserts an account currency matches the configured MIL_CURRENCY (default INR). */
 export function assertInr(channel: string, currency: string | undefined): void {
-  if (currency && currency.toUpperCase() !== 'INR') {
+  if (currency && currency.toUpperCase() !== env.MIL_CURRENCY.toUpperCase()) {
     throw new CurrencyError(channel, currency);
   }
 }

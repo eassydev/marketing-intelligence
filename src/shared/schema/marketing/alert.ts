@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { text, numeric, jsonb, timestamp, index, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+import { text, numeric, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 
 /** PARKED (Module B — anomaly/alert layer). Table created now, no jobs yet. */
 export const alert = marketing.table(
@@ -20,6 +20,6 @@ export const alert = marketing.table(
   },
   (t) => [
     index('idx_alert_app_fired').on(t.app, t.firedAt),
-    check('alert_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('alert_app_chk', t.app),
   ],
 );

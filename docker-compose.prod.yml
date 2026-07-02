@@ -3,10 +3,15 @@
 # Internal-only: the app port binds to MIL_BIND_IP (set it to the VM's PRIVATE VPC
 # IP so the backend box can reach it; it is NOT exposed publicly). Defaults to
 # localhost if unset.
+#
+# Multi-instance: set MIL_INSTANCE_NAME (default 'mil') to a unique value per clone
+# so the container/image/volume names don't collide when several MIL instances run
+# on one host. Pair it with a distinct MIL_QUEUE_PREFIX if they share one Redis.
 services:
   mil:
     build: .
-    image: mil:latest
+    image: ${MIL_INSTANCE_NAME:-mil}:latest
+    container_name: ${MIL_INSTANCE_NAME:-mil}
     restart: unless-stopped
     env_file: .env.production
     environment:
@@ -30,6 +35,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: ${MIL_INSTANCE_NAME:-mil}-redis
     restart: unless-stopped
     command: ['redis-server', '--appendonly', 'yes']
     volumes:
@@ -42,3 +48,4 @@ services:
 
 volumes:
   mil_redis:
+    name: ${MIL_INSTANCE_NAME:-mil}_redis

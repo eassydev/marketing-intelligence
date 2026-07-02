@@ -5,9 +5,10 @@ import { env } from '../../config/env.js';
 import { makeServiceTokenGuard } from '../../shared/middleware/service-token.js';
 import { db } from '../../shared/db/index.js';
 import { alert } from '../../shared/schema/index.js';
+import { appSchema } from '../../shared/types/app.js';
 
 const listQuery = z.object({
-  app: z.enum(['services', 'society']).default('services'),
+  app: appSchema,
   severity: z.enum(['info', 'warn', 'critical']).optional(),
 });
 

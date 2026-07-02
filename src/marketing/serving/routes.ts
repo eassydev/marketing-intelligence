@@ -11,9 +11,10 @@ import {
   type SpendFilters,
   type Dimension,
 } from './queries.js';
+import { appSchema } from '../../shared/types/app.js';
 
 const querySchema = z.object({
-  app: z.enum(['services', 'society']).default('services'),
+  app: appSchema,
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   city: z.string().optional(),
