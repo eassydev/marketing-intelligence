@@ -42,8 +42,11 @@ export async function runGeoMonitor(): Promise<GeoRunResult> {
   }
 
   const runAt = new Date();
+  // Shared abort flag: a persistence failure in any engine lane trips this so the
+  // remaining lanes stop spending LLM budget and the run rejects (→ BullMQ retries).
+  const state = { aborted: false };
   const tallies = await mapWithConcurrency(engines, ENGINE_CONCURRENCY, (engine) =>
-    runEngine(engine, questions, runAt),
+    runEngine(engine, questions, runAt, state),
   );
 
   const result = tallies.reduce<GeoRunResult>(
@@ -62,14 +65,26 @@ async function runEngine(
   engine: GeoEngine,
   questions: GeoQuestion[],
   runAt: Date,
+  state: { aborted: boolean },
 ): Promise<EngineTally> {
   let observations = 0;
   let mentions = 0;
   for (const question of questions) {
+    if (state.aborted) break; // a persistence failure elsewhere — stop spending
+    let answer;
     try {
-      const answer = await engine.ask(question.text);
-      const detection = detectMention(answer.text, env.MIL_BRAND_ALIASES);
-      const citations = classifyCitations(answer.citedDomains, env.MIL_BRAND_ALIASES);
+      answer = await engine.ask(question.text);
+    } catch (err) {
+      // Engine outage / rate-limit for THIS question only — skip it, keep going.
+      log.error(
+        { engine: engine.engine, promptKey: question.key, err: (err as Error).message },
+        'geo engine question failed — continuing with next',
+      );
+      continue;
+    }
+    const detection = detectMention(answer.text, env.MIL_BRAND_ALIASES);
+    const citations = classifyCitations(answer.citedDomains, env.MIL_BRAND_ALIASES);
+    try {
       await db.insert(geoObservation).values({
         app: env.MIL_DEFAULT_APP,
         runAt,
@@ -82,14 +97,14 @@ async function runEngine(
         competitors: citations.competitorDomains,
         rawResponse: answer.text.slice(0, RAW_RESPONSE_MAX_CHARS),
       });
-      observations += 1;
-      if (detection.mentioned) mentions += 1;
-    } catch (err) {
-      log.error(
-        { engine: engine.engine, promptKey: question.key, err: (err as Error).message },
-        'geo question failed — continuing with next',
-      );
+    } catch (dbErr) {
+      // Persistence failure is NOT swallowed: abort the run so the BullMQ job fails
+      // and retries (attempts:3) instead of silently writing zero rows for the week.
+      state.aborted = true;
+      throw dbErr;
     }
+    observations += 1;
+    if (detection.mentioned) mentions += 1;
   }
   log.info({ engine: engine.engine, observations, mentions }, 'engine pass complete');
   return { observations, mentions };
