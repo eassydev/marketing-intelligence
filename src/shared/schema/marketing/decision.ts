@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { text, jsonb, timestamp, index, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 
 /**
  * Action log + autonomy substrate. DryRunAdActionPort writes rows here with
@@ -31,7 +31,7 @@ export const decision = marketing.table(
   },
   (t) => [
     index('idx_decision_status').on(t.app, t.status, t.proposedAt),
-    check('decision_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('decision_app_chk', t.app),
     check('decision_mode_chk', sql`${t.mode} in ('dry_run','live')`),
     check(
       'decision_status_chk',

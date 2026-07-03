@@ -15,6 +15,7 @@ let runResolver: (o?: { limit?: number }) => Promise<{ resolved: number; matched
 let queries: typeof import('../src/marketing/serving/queries.js');
 let db: typeof import('../src/shared/db/index.js')['db'];
 let schema: typeof import('../src/shared/schema/index.js');
+let APP: string;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer('pgvector/pgvector:pg16').start();
@@ -35,6 +36,7 @@ beforeAll(async () => {
   queries = await import('../src/marketing/serving/queries.js');
   ({ db } = await import('../src/shared/db/index.js'));
   schema = await import('../src/shared/schema/index.js');
+  APP = (await import('../src/config/env.js')).env.MIL_DEFAULT_APP;
 }, 120_000);
 
 afterAll(async () => {
@@ -46,7 +48,7 @@ afterAll(async () => {
 describe('attribution spine (integration)', () => {
   it('resolves last-touch to a campaign and computes the hero metric', async () => {
     await db.insert(schema.adEntity).values({
-      app: 'services',
+      app: APP,
       channel: 'meta',
       level: 'campaign',
       externalId: 'c1',
@@ -58,7 +60,7 @@ describe('attribution spine (integration)', () => {
     });
     const [ent] = await db.select({ id: schema.adEntity.id }).from(schema.adEntity);
     await db.insert(schema.adPerformanceDaily).values({
-      app: 'services',
+      app: APP,
       adEntityId: ent!.id,
       statDate: '2026-06-20',
       channel: 'meta',
@@ -70,7 +72,7 @@ describe('attribution spine (integration)', () => {
     });
 
     await writeTouch({
-      app: 'services',
+      app: APP,
       session_id: 's1',
       user_id: 42,
       occurred_at: '2026-06-20T09:00:00Z',
@@ -80,7 +82,7 @@ describe('attribution spine (integration)', () => {
     } as TouchIngest);
 
     const conv: ConversionIngest = {
-      app: 'services',
+      app: APP,
       order_id: 'O1',
       user_id: 42,
       value_inr: 1500,
@@ -95,7 +97,7 @@ describe('attribution spine (integration)', () => {
     const res = await runResolver();
     expect(res.matched).toBe(1);
 
-    const f = { app: 'services' as const, from: '2026-06-01', to: '2026-06-30' };
+    const f = { app: APP, from: '2026-06-01', to: '2026-06-30' };
     const cac = await queries.cacSummary(f);
     expect(cac.first_orders).toBe(1);
     expect(cac.spend_inr).toBe(3000);
@@ -111,7 +113,7 @@ describe('attribution spine (integration)', () => {
     const { actionPort } = await import('../src/marketing/actions/index.js');
     expect(actionPort.mode).toBe('dry_run');
     const res = await actionPort.setDailyBudgetInr(
-      { app: 'services', channel: 'meta', level: 'campaign', externalId: 'c1' },
+      { app: APP, channel: 'meta', level: 'campaign', externalId: 'c1' },
       250,
       { source: 'rules', reason: 'CAC above threshold', correlationId: 'corr-1' },
     );

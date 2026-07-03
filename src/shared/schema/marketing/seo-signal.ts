@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { text, integer, boolean, jsonb, timestamp, index, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+import { text, integer, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 
 /** PARKED (Module A — SEO/technical signals). Table created now, no jobs yet. */
 export const seoSignal = marketing.table(
@@ -18,6 +18,6 @@ export const seoSignal = marketing.table(
   },
   (t) => [
     index('idx_seo_app_url').on(t.app, t.url, t.checkedAt),
-    check('seo_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('seo_app_chk', t.app),
   ],
 );

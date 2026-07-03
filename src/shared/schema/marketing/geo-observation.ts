@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { text, integer, boolean, jsonb, timestamp, index, check } from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+import { text, integer, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 
 /** PARKED (Module A — GEO/AI-presence monitor). Table created now, no jobs yet. */
 export const geoObservation = marketing.table(
@@ -20,6 +20,6 @@ export const geoObservation = marketing.table(
   },
   (t) => [
     index('idx_geo_app_prompt').on(t.app, t.promptKey, t.runAt),
-    check('geo_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('geo_app_chk', t.app),
   ],
 );

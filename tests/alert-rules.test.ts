@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { env } from '../src/config/env.js';
+const APP = env.MIL_DEFAULT_APP;
 import { evaluateRules } from '../src/marketing/alerts/rules.js';
 
 const base = {
-  app: 'services' as const,
+  app: APP,
   cpfoThresholdInr: 500,
   dropThresholdPct: 40,
 };

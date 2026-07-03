@@ -12,7 +12,8 @@ const csv = (value: string): string[] =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-export const envSchema = z.object({
+export const envSchema = z
+  .object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(5100),
@@ -26,15 +27,27 @@ export const envSchema = z.object({
   INTERNAL_INGEST_TOKEN: z.string().min(16),
   MIL_SERVING_TOKEN: z.string().min(16),
 
-  // Behaviour flags.
-  MIL_DEFAULT_APP: z.enum(['services', 'society']).default('services'),
-  MIL_ACTION_MODE: z.enum(['dry_run', 'live']).default('dry_run'),
-  MIL_ENABLED_APPS: z
+  // Tenant model — the set of valid `app` values is per-instance. MIL clones for
+  // a different marketplace by setting MIL_APP_LIST (see NEW_INSTANCE.md); every
+  // app enum in the code and the DB CHECK(app IN …) lists follow from it.
+  MIL_APP_LIST: z
     .string()
-    .default('services')
+    .default('services,society')
     .transform(csv)
-    .pipe(z.array(z.enum(['services', 'society'])).nonempty()),
+    .pipe(z.array(z.string().min(1)).nonempty()),
+  // Optional; when unset they derive from MIL_APP_LIST (default app = first app,
+  // enabled = [first app]). Both are validated ⊆ MIL_APP_LIST in the refine below.
+  MIL_DEFAULT_APP: z.string().optional(),
+  MIL_ENABLED_APPS: z.string().optional(),
+  MIL_ACTION_MODE: z.enum(['dry_run', 'live']).default('dry_run'),
   MIL_CLICK_LOOKBACK_DAYS: z.coerce.number().int().positive().default(7),
+
+  // Instance identity + localization (per-clone). MIL_QUEUE_PREFIX namespaces
+  // every BullMQ queue so multiple instances can share one Redis safely.
+  MIL_QUEUE_PREFIX: z.string().min(1).default('mil'),
+  MIL_CURRENCY: z.string().min(1).default('INR'),
+  MIL_CRON_TIMEZONE: z.string().min(1).default('Asia/Kolkata'),
+  MIL_MARKET_DESCRIPTION: z.string().min(1).default('Indian home-services marketplace'),
 
   // Alert layer (Module B) thresholds.
   MIL_CPFO_ALERT_INR: z.coerce.number().nonnegative().default(500),
@@ -89,7 +102,35 @@ export const envSchema = z.object({
   WHATSAPP_TOKEN: z.string().optional(),
   WHATSAPP_API_VERSION: z.string().default('v21.0'),
   WHATSAPP_RECIPIENT_ALLOWLIST: z.string().default('').transform(csv),
-});
+  })
+  // Fill app defaults from MIL_APP_LIST when unset, then normalize the enabled
+  // list to an array.
+  .transform((v) => ({
+    ...v,
+    MIL_DEFAULT_APP: v.MIL_DEFAULT_APP ?? v.MIL_APP_LIST[0],
+    MIL_ENABLED_APPS: v.MIL_ENABLED_APPS ? csv(v.MIL_ENABLED_APPS) : [v.MIL_APP_LIST[0]],
+  }))
+  // Every app referenced by MIL_DEFAULT_APP / MIL_ENABLED_APPS must be declared
+  // in MIL_APP_LIST — catches typos and stale config at boot, not deep in a job.
+  .superRefine((v, ctx) => {
+    const allowed = new Set(v.MIL_APP_LIST);
+    if (!allowed.has(v.MIL_DEFAULT_APP)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['MIL_DEFAULT_APP'],
+        message: `'${v.MIL_DEFAULT_APP}' is not in MIL_APP_LIST [${v.MIL_APP_LIST.join(', ')}]`,
+      });
+    }
+    for (const app of v.MIL_ENABLED_APPS) {
+      if (!allowed.has(app)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['MIL_ENABLED_APPS'],
+          message: `'${app}' is not in MIL_APP_LIST [${v.MIL_APP_LIST.join(', ')}]`,
+        });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

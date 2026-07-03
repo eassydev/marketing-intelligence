@@ -7,9 +7,8 @@ import {
   timestamp,
   index,
   uniqueIndex,
-  check,
-} from 'drizzle-orm/pg-core';
-import { marketing, idCol, appCol } from './_shared.js';
+  } from 'drizzle-orm/pg-core';
+import { marketing, idCol, appCol, appCheck } from './_shared.js';
 import { adEntity } from './ad-entity.js';
 
 /**
@@ -50,6 +49,6 @@ export const conversion = marketing.table(
     index('idx_conversion_entity')
       .on(t.app, t.attributedEntityId)
       .where(sql`attributed_entity_id is not null`),
-    check('conversion_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('conversion_app_chk', t.app),
   ],
 );

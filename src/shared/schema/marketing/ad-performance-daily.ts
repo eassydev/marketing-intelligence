@@ -7,9 +7,8 @@ import {
   timestamp,
   index,
   primaryKey,
-  check,
-} from 'drizzle-orm/pg-core';
-import { marketing, appCol } from './_shared.js';
+  } from 'drizzle-orm/pg-core';
+import { marketing, appCol, appCheck } from './_shared.js';
 import { adEntity } from './ad-entity.js';
 
 /**
@@ -36,6 +35,6 @@ export const adPerformanceDaily = marketing.table(
   (t) => [
     primaryKey({ columns: [t.app, t.adEntityId, t.statDate] }),
     index('idx_perf_app_date').on(t.app, t.statDate),
-    check('ad_perf_app_chk', sql`${t.app} in ('services','society')`),
+    appCheck('ad_perf_app_chk', t.app),
   ],
 );

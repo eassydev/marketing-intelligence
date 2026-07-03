@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { env } from '../src/config/env.js';
+const APP = env.MIL_DEFAULT_APP;
 import { MetaConnector } from '../src/marketing/ingest/meta-connector.js';
 import { GoogleConnector } from '../src/marketing/ingest/google-connector.js';
 
@@ -43,12 +45,12 @@ describe('MetaConnector', () => {
     );
 
     const c = new MetaConnector({ accessToken: 't', adAccountId: '123', graphVersion: 'v21.0' });
-    const entities = await c.fetchEntities('services', range);
+    const entities = await c.fetchEntities(APP, range);
     const campaign = entities.find((e) => e.externalId === 'c1');
     expect(campaign).toMatchObject({ level: 'campaign', dailyBudgetInr: 500 });
     expect(entities.find((e) => e.externalId === 's1')?.parentExternalId).toBe('c1');
 
-    const perf = await c.fetchPerformance('services', range);
+    const perf = await c.fetchPerformance(APP, range);
     expect(perf[0]).toMatchObject({
       externalId: 'a1',
       statDate: '2026-06-01',
@@ -61,7 +63,7 @@ describe('MetaConnector', () => {
   it('throws on non-INR account currency', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonRes({ currency: 'USD' })));
     const c = new MetaConnector({ accessToken: 't', adAccountId: '1', graphVersion: 'v21.0' });
-    await expect(c.fetchEntities('services', range)).rejects.toThrow(/INR/);
+    await expect(c.fetchEntities(APP, range)).rejects.toThrow(/INR/);
   });
 });
 
@@ -96,10 +98,10 @@ describe('GoogleConnector', () => {
       apiVersion: 'v18',
     });
 
-    const entities = await c.fetchEntities('services', range);
+    const entities = await c.fetchEntities(APP, range);
     expect(entities.map((e) => e.level).sort()).toEqual(['adset', 'campaign']);
 
-    const perf = await c.fetchPerformance('services', range);
+    const perf = await c.fetchPerformance(APP, range);
     expect(perf[0]).toMatchObject({
       externalId: 'c1',
       spendInr: 2,

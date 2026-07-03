@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { appSchema } from '../../shared/types/app.js';
 
-const appField = z.enum(['services', 'society']).default('services');
+const appField = appSchema;
 
 /** POST /ingest/conversion — canonical numeric ids (BackendNew decrypts first). */
 export const conversionIngestSchema = z.object({

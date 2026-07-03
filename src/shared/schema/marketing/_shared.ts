@@ -1,4 +1,6 @@
-import { pgSchema, bigint, text, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgSchema, bigint, text, timestamp, check, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { env } from '../../../config/env.js';
 
 /**
  * All MIL tables live under the `marketing` Postgres schema. Declaring tables
@@ -6,6 +8,24 @@ import { pgSchema, bigint, text, timestamp } from 'drizzle-orm/pg-core';
  * so queries never depend on search_path (keeps Supabase↔E2E portable).
  */
 export const marketing = pgSchema('marketing');
+
+/**
+ * Tenant CHECK constraint, driven by MIL_APP_LIST so the Drizzle model tracks
+ * the instance's app set automatically.
+ *
+ * NOTE — mirrors the hand-authored `CHECK (app IN (...))` lists in
+ * drizzle/0001_core.sql and drizzle/0002_parked.sql. Those SQL files (NOT
+ * drizzle-kit) migrate the LIVE database, so when cloning MIL for a new
+ * marketplace you MUST edit the CHECK lists in both files to match MIL_APP_LIST
+ * (see NEW_INSTANCE.md). This helper only keeps the TypeScript schema honest.
+ */
+export function appCheck(name: string, appColumn: AnyPgColumn) {
+  const list = sql.join(
+    env.MIL_APP_LIST.map((a) => sql`${a}`),
+    sql`, `,
+  );
+  return check(name, sql`${appColumn} in (${list})`);
+}
 
 /** BIGINT identity PK, per the build spec. Drizzle omits it on insert. */
 export const idCol = () =>
