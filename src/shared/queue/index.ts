@@ -30,6 +30,7 @@ export const ingestGoogleQueue = new Queue(qn('ingest-google'), { connection });
 export const attributionQueue = new Queue(qn('attribution-resolve'), { connection });
 export const alertQueue = new Queue(qn('alerts-evaluate'), { connection });
 export const geoMonitorQueue = new Queue(qn('geo-monitor'), { connection });
+export const eventsMaintainQueue = new Queue(qn('events-maintain'), { connection });
 
 const workers: Worker[] = [];
 
@@ -98,6 +99,22 @@ export function startWorkers(): Worker[] {
   );
   workers.push(geoWorker);
 
+  const eventsMaintainWorker = new Worker(
+    qn('events-maintain'),
+    async (job) => {
+      const { maintainEventPartitions } = await import(
+        '../../marketing/jobs/event-partitions.js'
+      );
+      log.info({ jobId: job.id }, 'maintaining app_event partitions');
+      return maintainEventPartitions();
+    },
+    { connection, concurrency: 1 },
+  );
+  eventsMaintainWorker.on('failed', (job, err) =>
+    log.error({ queue: qn('events-maintain'), jobId: job?.id, err }, 'job failed'),
+  );
+  workers.push(eventsMaintainWorker);
+
   log.info({ count: workers.length }, 'BullMQ workers started');
   return workers;
 }
@@ -129,6 +146,13 @@ export async function setupRecurringJobs(): Promise<void> {
     'geo-monitor',
     { pattern: '30 3 * * 1', tz },
     { name: 'geo-monitor', data: {}, opts: defaultJobOptions },
+  );
+  // Monthly (1st, 02:20 IST): pre-create upcoming app_event partitions + drop
+  // partitions past MIL_EVENTS_RETENTION_MONTHS.
+  await eventsMaintainQueue.upsertJobScheduler(
+    'events-maintain',
+    { pattern: '20 2 1 * *', tz },
+    { name: 'events-maintain', data: {}, opts: defaultJobOptions },
   );
   log.info('Recurring jobs scheduled');
 }
