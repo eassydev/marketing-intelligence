@@ -45,6 +45,14 @@ export const envSchema = z
   // the monthly events-maintain job. 13 keeps a rolling year + current month.
   MIL_EVENTS_RETENTION_MONTHS: z.coerce.number().int().positive().default(13),
 
+  // Behavioural segmentation (Module — segments). All optional with defaults.
+  // Max user_ids returned per /members page (keyset pagination hard cap).
+  MIL_SEGMENT_MEMBERS_PAGE_MAX: z.coerce.number().int().positive().default(10_000),
+  // statement_timeout for a /dry-run compileCount (ms) — bounds ad-hoc queries.
+  MIL_SEGMENT_DRYRUN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  // statement_timeout for a full segment refresh (ms).
+  MIL_SEGMENT_REFRESH_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+
   // Instance identity + localization (per-clone). MIL_QUEUE_PREFIX namespaces
   // every BullMQ queue so multiple instances can share one Redis safely.
   MIL_QUEUE_PREFIX: z.string().min(1).default('mil'),
