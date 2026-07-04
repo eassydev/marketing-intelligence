@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { env } from '../../config/env.js';
 import { makeServiceTokenGuard } from '../../shared/middleware/service-token.js';
-import { conversionIngestSchema, touchIngestSchema } from './validators.js';
+import { conversionIngestSchema, touchIngestSchema, eventsIngestSchema } from './validators.js';
 import { writeConversion } from './conversion-writer.js';
 import { writeTouch } from './touch-writer.js';
+import { writeEvents } from './event-writer.js';
 
 /**
  * Internal ingest endpoints (BackendNew → MIL). Token-gated for now; when the
@@ -24,4 +25,20 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     await writeTouch(payload);
     return { ok: true };
   });
+
+  // Batch product-event ingest. Batches are larger and higher-frequency than
+  // single touches/conversions, so this route overrides the app-wide 1MB body
+  // limit (→2MB, ~200 events) and the global 100/min rate limit (→1200/min).
+  app.post(
+    '/ingest/events',
+    {
+      bodyLimit: 2_097_152, // 2MB
+      config: { rateLimit: { max: 1200, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const payload = eventsIngestSchema.parse(req.body);
+      const { received, inserted } = await writeEvents(payload);
+      return { ok: true, received, inserted };
+    },
+  );
 }

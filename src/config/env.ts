@@ -41,6 +41,9 @@ export const envSchema = z
   MIL_ENABLED_APPS: z.string().optional(),
   MIL_ACTION_MODE: z.enum(['dry_run', 'live']).default('dry_run'),
   MIL_CLICK_LOOKBACK_DAYS: z.coerce.number().int().positive().default(7),
+  // app_event retention: partitions older than this many months are dropped by
+  // the monthly events-maintain job. 13 keeps a rolling year + current month.
+  MIL_EVENTS_RETENTION_MONTHS: z.coerce.number().int().positive().default(13),
 
   // Instance identity + localization (per-clone). MIL_QUEUE_PREFIX namespaces
   // every BullMQ queue so multiple instances can share one Redis safely.

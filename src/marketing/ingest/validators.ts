@@ -40,3 +40,28 @@ export const touchIngestSchema = z.object({
   consent: z.boolean().default(false),
 });
 export type TouchIngest = z.infer<typeof touchIngestSchema>;
+
+/** A single first-party product event (el_* taxonomy). */
+export const appEventSchema = z.object({
+  event_id: z.string().uuid(), // client-minted; idempotency key
+  event_name: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9_]+$/, 'event_name must be lower snake_case (a-z, 0-9, _)'),
+  occurred_at: z.string().datetime(),
+  session_id: z.string().max(64).nullish(), // mil_sid
+  user_id: z.number().int().positive().nullish(),
+  platform: z.enum(['android', 'ios', 'web']).nullish(),
+  app_version: z.string().max(32).nullish(),
+  props: z.record(z.unknown()).nullish(),
+});
+export type AppEventInput = z.infer<typeof appEventSchema>;
+
+/** POST /ingest/events — batch of product events from one app. */
+export const eventsIngestSchema = z.object({
+  app: appField,
+  batch_id: z.string().uuid().optional(), // dedup/observability hint (not stored)
+  events: z.array(appEventSchema).min(1).max(200),
+});
+export type EventsIngest = z.infer<typeof eventsIngestSchema>;
