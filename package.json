@@ -11,6 +11,7 @@
     "migrate:generate": "drizzle-kit generate",
     "check-env": "tsx scripts/check-env.ts",
     "seed": "tsx scripts/seed.ts",
+    "seed:segments": "tsx scripts/seed-segments.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

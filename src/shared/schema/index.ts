@@ -8,3 +8,4 @@ export { geoObservation } from './marketing/geo-observation.js';
 export { seoSignal } from './marketing/seo-signal.js';
 export { alert } from './marketing/alert.js';
 export { appEvent } from './marketing/app-event.js';
+export { segment, segmentMembership } from './marketing/segment.js';

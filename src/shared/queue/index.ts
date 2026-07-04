@@ -31,6 +31,16 @@ export const attributionQueue = new Queue(qn('attribution-resolve'), { connectio
 export const alertQueue = new Queue(qn('alerts-evaluate'), { connection });
 export const geoMonitorQueue = new Queue(qn('geo-monitor'), { connection });
 export const eventsMaintainQueue = new Queue(qn('events-maintain'), { connection });
+export const segmentsRefreshQueue = new Queue(qn('segments-refresh'), { connection });
+
+// Segment refreshes are heavier and rebuild whole membership tables; give them a
+// longer backoff and only 2 attempts (a bad definition should surface fast).
+const segmentJobOptions = {
+  attempts: 2,
+  backoff: { type: 'exponential' as const, delay: 120_000 },
+  removeOnComplete: 200,
+  removeOnFail: false,
+};
 
 const workers: Worker[] = [];
 
@@ -115,6 +125,41 @@ export function startWorkers(): Worker[] {
   );
   workers.push(eventsMaintainWorker);
 
+  // Segments refresh: two job names on one queue.
+  //   refresh-due     → dispatcher: enqueue one refresh-segment per due segment
+  //   refresh-segment → recompute a single segment's membership
+  const segmentsWorker = new Worker(
+    qn('segments-refresh'),
+    async (job) => {
+      if (job.name === 'refresh-due') {
+        const { dueSegmentIds } = await import('../../marketing/segments/refresh.js');
+        const ids = await dueSegmentIds();
+        log.info({ jobId: job.id, due: ids.length }, 'segments dispatcher');
+        // Stagger enqueue so a large batch does not stampede the DB; jobId
+        // refresh-<id> dedups a still-queued refresh for the same segment.
+        await Promise.all(
+          ids.map((id, i) =>
+            segmentsRefreshQueue.add(
+              'refresh-segment',
+              { segmentId: id },
+              { ...segmentJobOptions, jobId: `refresh-${id}`, delay: i * 2_000 },
+            ),
+          ),
+        );
+        return { dispatched: ids.length };
+      }
+      const { refreshSegment } = await import('../../marketing/segments/refresh.js');
+      const segmentId = (job.data as { segmentId: number }).segmentId;
+      log.info({ jobId: job.id, segmentId }, 'refreshing segment');
+      return refreshSegment(segmentId);
+    },
+    { connection, concurrency: 1 },
+  );
+  segmentsWorker.on('failed', (job, err) =>
+    log.error({ queue: qn('segments-refresh'), jobId: job?.id, err }, 'job failed'),
+  );
+  workers.push(segmentsWorker);
+
   log.info({ count: workers.length }, 'BullMQ workers started');
   return workers;
 }
@@ -153,6 +198,13 @@ export async function setupRecurringJobs(): Promise<void> {
     'events-maintain',
     { pattern: '20 2 1 * *', tz },
     { name: 'events-maintain', data: {}, opts: defaultJobOptions },
+  );
+  // Every 15 min (offset from :00 to avoid colliding with the hourly alert job):
+  // scan for segments whose refresh interval has elapsed and dispatch refreshes.
+  await segmentsRefreshQueue.upsertJobScheduler(
+    'segments-refresh-due',
+    { pattern: '12,27,42,57 * * * *', tz },
+    { name: 'refresh-due', data: {}, opts: segmentJobOptions },
   );
   log.info('Recurring jobs scheduled');
 }
