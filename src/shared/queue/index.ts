@@ -30,6 +30,7 @@ export const ingestGoogleQueue = new Queue(qn('ingest-google'), { connection });
 export const attributionQueue = new Queue(qn('attribution-resolve'), { connection });
 export const alertQueue = new Queue(qn('alerts-evaluate'), { connection });
 export const geoMonitorQueue = new Queue(qn('geo-monitor'), { connection });
+export const capiMetaQueue = new Queue(qn('capi-meta'), { connection });
 export const eventsMaintainQueue = new Queue(qn('events-maintain'), { connection });
 export const segmentsRefreshQueue = new Queue(qn('segments-refresh'), { connection });
 
@@ -160,6 +161,21 @@ export function startWorkers(): Worker[] {
   );
   workers.push(segmentsWorker);
 
+  const capiWorker = new Worker(
+    qn('capi-meta'),
+    async (job) => {
+      // runCapiUpload no-ops with a log when META_CAPI_ENABLED is false.
+      const { runCapiUpload } = await import('../../marketing/capi/upload-job.js');
+      log.info({ jobId: job.id }, 'running Meta CAPI upload');
+      return runCapiUpload();
+    },
+    { connection, concurrency: 1 },
+  );
+  capiWorker.on('failed', (job, err) =>
+    log.error({ queue: qn('capi-meta'), jobId: job?.id, err }, 'job failed'),
+  );
+  workers.push(capiWorker);
+
   log.info({ count: workers.length }, 'BullMQ workers started');
   return workers;
 }
@@ -205,6 +221,13 @@ export async function setupRecurringJobs(): Promise<void> {
     'segments-refresh-due',
     { pattern: '12,27,42,57 * * * *', tz },
     { name: 'refresh-due', data: {}, opts: segmentJobOptions },
+  );
+  // 20 min after ingest-meta/resolve so attribution has settled. No-ops while
+  // META_CAPI_ENABLED is false, so this is safe to schedule now.
+  await capiMetaQueue.upsertJobScheduler(
+    'capi-meta',
+    { pattern: '35 */3 * * *', tz },
+    { name: 'capi-meta', data: {}, opts: defaultJobOptions },
   );
   log.info('Recurring jobs scheduled');
 }

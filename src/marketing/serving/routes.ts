@@ -8,6 +8,9 @@ import {
   spendBreakdown,
   cacSummary,
   costPerFirstOrder,
+  repeatRate,
+  cohortRevenue,
+  ltvCac,
   type SpendFilters,
   type Dimension,
 } from './queries.js';
@@ -143,5 +146,20 @@ export async function servingRoutes(app: FastifyInstance): Promise<void> {
     const days = parseDays(req);
     const cohort = parseCohort(req);
     return envelope(f.app, { from: f.from, to: f.to }, {}, await retention(f, days, cohort));
+  });
+
+  // ── LTV:CAC + repeat-rate + cohort revenue (Phase F) ─────────────────────
+  app.get('/marketing/metrics/ltv', async (req) => {
+    const f = parseFilters(req);
+    const [repeat, byChannel, cohorts] = await Promise.all([
+      repeatRate(f),
+      ltvCac(f),
+      cohortRevenue(f),
+    ]);
+    return envelope(f.app, { from: f.from, to: f.to }, f, {
+      repeat,
+      by_channel: byChannel,
+      cohorts,
+    });
   });
 }
