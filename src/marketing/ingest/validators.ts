@@ -43,7 +43,7 @@ export const touchIngestSchema = z.object({
   ctwa_clid: z.string().min(1).max(512).nullish(),
   wa_phone_hash: z
     .string()
-    .regex(/^[0-9a-f]{64}$/, 'wa_phone_hash must be 64 lowercase hex chars (sha256 of E.164)')
+    .regex(/^[0-9a-f]{64}$/, 'wa_phone_hash must be 64 lowercase hex chars (sha256 of digits-only phone incl. country code)')
     .nullish(),
   utm_source: z.string().nullish(),
   utm_medium: z.string().nullish(),
@@ -64,7 +64,7 @@ export const leadEventIngestSchema = z.object({
   ctwa_clid: z.string().min(1).max(512),
   wa_phone_hash: z
     .string()
-    .regex(/^[0-9a-f]{64}$/, 'wa_phone_hash must be 64 lowercase hex chars (sha256 of E.164)')
+    .regex(/^[0-9a-f]{64}$/, 'wa_phone_hash must be 64 lowercase hex chars (sha256 of digits-only phone incl. country code)')
     .nullish(),
   lead_ref: z.string().max(64).nullish(),
   occurred_at: z.string().datetime().optional(),

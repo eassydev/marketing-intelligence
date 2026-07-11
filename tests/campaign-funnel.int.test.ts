@@ -119,6 +119,36 @@ beforeAll(async () => {
     isFirstOrder: true,
     actionSource: 'app',
   });
+
+  // ── Cross-campaign last-touch pair: fs6 touches cf_alpha then cf_beta, then
+  //    orders — the order belongs to cf_beta ONLY, even when the query is
+  //    filtered to cf_alpha (attribution pool must ignore the filters).
+  //    Plain 'touch' type + non-'qr' medium keep the other tests' expectations
+  //    (first_party_clicks counts, medium/channel filter row sets) unchanged.
+  const plainTouch = (utmCampaign: string, occurredAt: string) => ({
+    app: APP,
+    occurredAt: new Date(occurredAt),
+    channel: null,
+    touchType: 'touch',
+    sessionId: 'fs6',
+    utmCampaign,
+    utmMedium: 'banner',
+    consent: true,
+  });
+  await db.insert(schema.attributionTouch).values([
+    plainTouch('cf_alpha', '2026-06-05T08:00:00Z'),
+    plainTouch('cf_beta', '2026-06-08T08:00:00Z'),
+  ]);
+  await db.insert(schema.conversion).values({
+    app: APP,
+    orderId: 'CF-O2',
+    userId: null,
+    occurredAt: new Date('2026-06-09T10:00:00Z'),
+    valueInr: '500.00',
+    isFirstOrder: true,
+    actionSource: 'website',
+    sessionId: 'fs6',
+  });
 }, 120_000);
 
 afterAll(async () => {
@@ -177,6 +207,28 @@ describe('campaignFunnel (integration)', () => {
       [ADS_CAMPAIGN, OFFLINE_CAMPAIGN].sort(),
     );
     expect(rows.find((r) => r.utm_campaign === ADS_CAMPAIGN)!.ad_spend_inr).toBe(5000);
+  });
+
+  it('filtered queries keep last-touch attribution against ALL campaign touches', async () => {
+    // fs6: cf_alpha (Jun 5) → cf_beta (Jun 8) → order CF-O2 (Jun 9).
+    // Unfiltered listing: the order is cf_beta's.
+    const all = await campaignFunnel({ app: APP, ...F });
+    expect(all.find((r) => r.utm_campaign === 'cf_beta')!.orders).toBe(1);
+    expect(all.find((r) => r.utm_campaign === 'cf_beta')!.revenue_inr).toBe(500);
+    expect(all.find((r) => r.utm_campaign === 'cf_alpha')!.orders).toBe(0);
+
+    // Narrowing to cf_alpha must NOT re-credit the order to cf_alpha (that
+    // would double-count across per-campaign calls); the filtered row shows
+    // the same numbers as its row in the unfiltered listing.
+    const alpha = await campaignFunnel({ app: APP, ...F, utmCampaign: 'cf_alpha' });
+    expect(alpha).toHaveLength(1);
+    expect(alpha[0]!.orders).toBe(0);
+    expect(alpha[0]!.revenue_inr).toBe(0);
+
+    const beta = await campaignFunnel({ app: APP, ...F, utmCampaign: 'cf_beta' });
+    expect(beta).toHaveLength(1);
+    expect(beta[0]!.orders).toBe(1);
+    expect(beta[0]!.revenue_inr).toBe(500);
   });
 });
 

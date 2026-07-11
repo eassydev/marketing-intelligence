@@ -25,6 +25,11 @@ import type { AppKind } from '../../shared/types/app.js';
  *   resolve.ts (which prioritises user_id over session_id; here both collapse
  *   into one key). Identities with no in-lookback campaign touch drop out
  *   (organic), so stage counts are attributed counts, not app-wide totals.
+ * - utm_campaign/channel/medium filters narrow ONLY the campaign universe /
+ *   final row selection. Last-touch winners are always decided against the
+ *   FULL campaign-touch pool, so a filtered row shows the same numbers as the
+ *   same campaign's row in the unfiltered listing, and summing filtered calls
+ *   never double-counts a conversion across campaigns.
  * - installs / registrations / add_to_cart count each identity once per stage
  *   (first occurrence in-window); orders/revenue count every conversion row.
  * - `medium` filters touches on utm_medium; ad platforms carry no medium, so a
@@ -71,7 +76,8 @@ const identityKey = (alias: string): SQL =>
 const window = (col: SQL, f: CampaignFunnelFilters): SQL =>
   sql`${col} >= (${f.from}::date)::timestamptz and ${col} < ((${f.to}::date + 1))::timestamptz`;
 
-/** Touch-side filters shared by the universe + attribution CTEs. */
+/** Touch-side filters for the campaign UNIVERSE only (touch_campaigns) —
+ * never applied to touches_attr, which must see every campaign touch. */
 function touchFilters(f: CampaignFunnelFilters): SQL {
   const parts: SQL[] = [sql`t.utm_campaign is not null`];
   if (f.utmCampaign) parts.push(sql`lower(t.utm_campaign) = lower(${f.utmCampaign})`);
@@ -127,12 +133,19 @@ export async function campaignFunnel(
              ac.impressions, ac.ad_clicks, ac.ad_spend_inr
       from touch_campaigns tc
       ${universeJoin} ad_campaigns ac on ac.campaign_key = tc.campaign_key
-      order by coalesce(tc.first_party_clicks, 0) + coalesce(ac.ad_spend_inr, 0) desc
+      -- utm_campaign tiebreak keeps the LIMIT boundary deterministic when many
+      -- campaigns share a rank value (e.g. offline campaigns with no spend).
+      order by coalesce(tc.first_party_clicks, 0) + coalesce(ac.ad_spend_inr, 0) desc,
+               coalesce(tc.utm_campaign, ac.utm_campaign)
       limit ${MAX_CAMPAIGNS}
     ),
     touches_attr as (
-      -- Attribution source: campaign touches per identity, window widened
-      -- backwards by the lookback so an event on the from-date can still match.
+      -- Attribution source: ALL campaign touches per identity (deliberately
+      -- NOT narrowed by the request filters — winners must be decided against
+      -- the full touch set, or a filtered query would silently switch from
+      -- last-touch to "any touch of the filtered campaign" and double-count),
+      -- window widened backwards by the lookback so an event on the from-date
+      -- can still match.
       select ${identityKey('t')} as id,
              lower(t.utm_campaign) as campaign_key,
              t.occurred_at
@@ -141,7 +154,7 @@ export async function campaignFunnel(
       where t.app = ${f.app}
         and t.occurred_at >= ((${f.from}::date - ${lookbackDays}::int))::timestamptz
         and t.occurred_at < ((${f.to}::date + 1))::timestamptz
-        and ${touchFilters(f)}
+        and t.utm_campaign is not null
         and ${identityKey('t')} is not null
     ),
     ev as (

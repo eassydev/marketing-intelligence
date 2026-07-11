@@ -219,7 +219,7 @@ describe('CTWA lead events (integration)', () => {
       messaging_channel: 'whatsapp',
     });
     expect(withPhone!.user_data.ctwa_clid).toBe('ctwa-int-1'); // RAW
-    expect(withPhone!.user_data.ph).toEqual(['a'.repeat(64)]); // pre-hashed E.164
+    expect(withPhone!.user_data.ph).toEqual(['a'.repeat(64)]); // pre-hashed digits-only phone
     const withoutPhone = body.data.find((e) => e.event_id === 'lead-ctwa-int-2');
     expect(withoutPhone!.user_data.ph).toBeUndefined();
 

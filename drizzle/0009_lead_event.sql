@@ -12,7 +12,7 @@ CREATE TABLE marketing.lead_event (
   id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   app              TEXT NOT NULL CHECK (app IN ('services','society')),
   ctwa_clid        TEXT NOT NULL,
-  wa_phone_hash    TEXT,            -- sha256 hex of E.164 phone (never raw — DPDP)
+  wa_phone_hash    TEXT,            -- sha256 hex of digits-only phone incl. country code (Meta ph form; never raw — DPDP)
   lead_ref         TEXT,            -- producer's lead reference (b2c lead number)
   occurred_at      TIMESTAMPTZ NOT NULL,
   capi_uploaded_at TIMESTAMPTZ,     -- set once pushed to Meta's /events API

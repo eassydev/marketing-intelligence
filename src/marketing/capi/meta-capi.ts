@@ -95,7 +95,7 @@ export function buildPurchaseEvent(row: ConversionRow): MetaEvent {
 
 export interface LeadEventRow {
   ctwaClid: string;
-  waPhoneHash: string | null; // sha256 hex of E.164 — already Meta's ph format
+  waPhoneHash: string | null; // sha256 hex of digits-only phone — already Meta's ph format
   occurredAt: Date | string;
 }
 
@@ -103,8 +103,10 @@ export interface LeadEventRow {
  * Build a Meta Lead event for a qualified CTWA WhatsApp lead. event_id
  * 'lead-<ctwa_clid>' dedups retries server-side (one Lead per click), and the
  * business_messaging envelope + raw ctwa_clid are what make Meta attribute it
- * to the click-to-WhatsApp ad. wa_phone_hash is sha256(E.164) — exactly Meta's
- * `ph` hashing rule — so it is forwarded as-is, not re-hashed.
+ * to the click-to-WhatsApp ad. wa_phone_hash is sha256 of the DIGITS-ONLY
+ * phone with country code ('919876543210', no '+' — exactly Meta's `ph`
+ * normalization rule; the producer hashes that form) — so it is forwarded
+ * as-is, not re-hashed.
  */
 export function buildLeadEvent(row: LeadEventRow): MetaEvent {
   const userData: Record<string, unknown> = { ctwa_clid: row.ctwaClid };

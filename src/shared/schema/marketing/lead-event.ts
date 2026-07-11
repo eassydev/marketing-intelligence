@@ -15,7 +15,7 @@ export const leadEvent = marketing.table(
     id: idCol(),
     app: appCol(),
     ctwaClid: text('ctwa_clid').notNull(),
-    waPhoneHash: text('wa_phone_hash'), // sha256 hex of E.164 phone (never raw — DPDP)
+    waPhoneHash: text('wa_phone_hash'), // sha256 hex of digits-only phone incl. country code (Meta ph form; never raw — DPDP)
     leadRef: text('lead_ref'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
     capiUploadedAt: timestamp('capi_uploaded_at', { withTimezone: true }),

@@ -59,7 +59,7 @@ describe('buildLeadEvent', () => {
     expect(e.action_source).toBe('business_messaging');
     expect(e.messaging_channel).toBe('whatsapp');
     expect(e.user_data.ctwa_clid).toBe(CTWA_CLID); // RAW
-    // wa_phone_hash is already sha256(E.164) — forwarded as ph, not re-hashed.
+    // wa_phone_hash is already sha256 of the digits-only phone — forwarded as ph, not re-hashed.
     expect(e.user_data.ph).toEqual([WA_HASH]);
     expect(e.custom_data).toBeUndefined(); // Lead carries no value payload
   });
