@@ -57,6 +57,20 @@ export const touchIngestSchema = z.object({
 });
 export type TouchIngest = z.infer<typeof touchIngestSchema>;
 
+/** POST /ingest/lead-event — a qualified CTWA WhatsApp lead (§D CAPI). One row
+ * per (app, ctwa_clid); re-posts dedup via onConflictDoNothing. */
+export const leadEventIngestSchema = z.object({
+  app: appField,
+  ctwa_clid: z.string().min(1).max(512),
+  wa_phone_hash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, 'wa_phone_hash must be 64 lowercase hex chars (sha256 of E.164)')
+    .nullish(),
+  lead_ref: z.string().max(64).nullish(),
+  occurred_at: z.string().datetime().optional(),
+});
+export type LeadEventIngest = z.infer<typeof leadEventIngestSchema>;
+
 /** A single first-party product event (el_* taxonomy). */
 export const appEventSchema = z.object({
   event_id: z.string().uuid(), // client-minted; idempotency key

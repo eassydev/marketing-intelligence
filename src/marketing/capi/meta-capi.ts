@@ -33,15 +33,17 @@ export interface ConversionRow {
   city: string | null;
   fbc: string | null;
   fbp: string | null;
+  ctwaClid?: string | null; // CTWA click id → business_messaging envelope
 }
 
 export interface MetaEvent {
-  event_name: 'Purchase';
+  event_name: 'Purchase' | 'Lead';
   event_time: number;
   event_id: string;
-  action_source: 'website' | 'app';
+  action_source: 'website' | 'app' | 'business_messaging';
+  messaging_channel?: 'whatsapp'; // required alongside business_messaging
   user_data: Record<string, unknown>;
-  custom_data: { value: number; currency: 'INR' };
+  custom_data?: { value: number; currency: 'INR' }; // Purchase only
 }
 
 /** Only website|app are valid action_sources for these first-party purchases. */
@@ -49,7 +51,18 @@ function toActionSource(src: string | null): 'website' | 'app' {
   return src === 'app' ? 'app' : 'website';
 }
 
-/** Build a single Meta Purchase event from a resolved conversion row. */
+const toUnixSeconds = (occurredAt: Date | string): number => {
+  const occurred = occurredAt instanceof Date ? occurredAt : new Date(occurredAt);
+  return Math.floor(occurred.getTime() / 1000);
+};
+
+/**
+ * Build a single Meta Purchase event from a resolved conversion row. A row
+ * carrying a ctwa_clid came through click-to-WhatsApp: Meta only attributes
+ * those when sent as action_source='business_messaging' with
+ * messaging_channel='whatsapp' and the RAW ctwa_clid in user_data (a generic
+ * 'website' event silently drops the CTWA attribution).
+ */
 export function buildPurchaseEvent(row: ConversionRow): MetaEvent {
   const userData: Record<string, unknown> = {};
   if (row.userId != null && String(row.userId) !== '') {
@@ -60,15 +73,50 @@ export function buildPurchaseEvent(row: ConversionRow): MetaEvent {
   if (row.fbc) userData.fbc = row.fbc;
   if (row.fbp) userData.fbp = row.fbp;
 
-  const occurred = row.occurredAt instanceof Date ? row.occurredAt : new Date(row.occurredAt);
+  const base = {
+    event_name: 'Purchase' as const,
+    event_time: toUnixSeconds(row.occurredAt), // unix SECONDS
+    event_id: row.orderId, // dedup key with the browser pixel
+    custom_data: { value: Number(row.valueInr), currency: 'INR' as const },
+  };
+
+  if (row.ctwaClid) {
+    userData.ctwa_clid = row.ctwaClid; // RAW, never hashed (Meta spec)
+    return {
+      ...base,
+      action_source: 'business_messaging',
+      messaging_channel: 'whatsapp',
+      user_data: userData,
+    };
+  }
+
+  return { ...base, action_source: toActionSource(row.actionSource), user_data: userData };
+}
+
+export interface LeadEventRow {
+  ctwaClid: string;
+  waPhoneHash: string | null; // sha256 hex of E.164 — already Meta's ph format
+  occurredAt: Date | string;
+}
+
+/**
+ * Build a Meta Lead event for a qualified CTWA WhatsApp lead. event_id
+ * 'lead-<ctwa_clid>' dedups retries server-side (one Lead per click), and the
+ * business_messaging envelope + raw ctwa_clid are what make Meta attribute it
+ * to the click-to-WhatsApp ad. wa_phone_hash is sha256(E.164) — exactly Meta's
+ * `ph` hashing rule — so it is forwarded as-is, not re-hashed.
+ */
+export function buildLeadEvent(row: LeadEventRow): MetaEvent {
+  const userData: Record<string, unknown> = { ctwa_clid: row.ctwaClid };
+  if (row.waPhoneHash) userData.ph = [row.waPhoneHash];
 
   return {
-    event_name: 'Purchase',
-    event_time: Math.floor(occurred.getTime() / 1000), // unix SECONDS
-    event_id: row.orderId, // dedup key with the browser pixel
-    action_source: toActionSource(row.actionSource),
+    event_name: 'Lead',
+    event_time: toUnixSeconds(row.occurredAt),
+    event_id: `lead-${row.ctwaClid}`,
+    action_source: 'business_messaging',
+    messaging_channel: 'whatsapp',
     user_data: userData,
-    custom_data: { value: Number(row.valueInr), currency: 'INR' },
   };
 }
 

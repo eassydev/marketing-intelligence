@@ -167,3 +167,64 @@ describe('CAPI upload job (integration)', () => {
     expect(second.apps).toEqual([{ app: 'services', selected: 0, uploaded: 0 }]);
   });
 });
+
+describe('CTWA lead events (integration)', () => {
+  it('writeLeadEvent is idempotent on (app, ctwa_clid)', async () => {
+    const { writeLeadEvent } = await import('../src/marketing/ingest/lead-event-writer.js');
+    const payload = {
+      app: 'services',
+      ctwa_clid: 'ctwa-int-1',
+      wa_phone_hash: 'a'.repeat(64),
+      lead_ref: 'B2CL-000042',
+      occurred_at: '2026-06-25T09:00:00.000Z',
+    };
+    expect((await writeLeadEvent(payload)).deduped).toBe(false);
+    expect((await writeLeadEvent(payload)).deduped).toBe(true); // idempotent
+    // Second lead with no phone hash for the ph-omission path below.
+    await writeLeadEvent({
+      app: 'services',
+      ctwa_clid: 'ctwa-int-2',
+      occurred_at: '2026-06-25T10:00:00.000Z',
+    });
+  });
+
+  it('uploads pending leads as business_messaging Lead events and marks them', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: { body: string }) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ events_received: 2 }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await runCapiUpload();
+    vi.unstubAllGlobals();
+
+    expect(result.leads).toEqual([{ app: 'services', selected: 2, uploaded: 2 }]);
+    // Purchases were all marked by the earlier test → the single call is leads.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body) as {
+      data: Array<{
+        event_id: string;
+        event_name: string;
+        action_source: string;
+        messaging_channel?: string;
+        user_data: { ctwa_clid?: string; ph?: string[] };
+      }>;
+    };
+    const withPhone = body.data.find((e) => e.event_id === 'lead-ctwa-int-1');
+    expect(withPhone).toMatchObject({
+      event_name: 'Lead',
+      action_source: 'business_messaging',
+      messaging_channel: 'whatsapp',
+    });
+    expect(withPhone!.user_data.ctwa_clid).toBe('ctwa-int-1'); // RAW
+    expect(withPhone!.user_data.ph).toEqual(['a'.repeat(64)]); // pre-hashed E.164
+    const withoutPhone = body.data.find((e) => e.event_id === 'lead-ctwa-int-2');
+    expect(withoutPhone!.user_data.ph).toBeUndefined();
+
+    // Both rows are now marked uploaded → a second run finds nothing.
+    const second = await runCapiUpload();
+    expect(second.leads).toEqual([{ app: 'services', selected: 0, uploaded: 0 }]);
+  });
+});

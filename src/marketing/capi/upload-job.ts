@@ -8,9 +8,16 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { env } from '../../config/env.js';
 import { db } from '../../shared/db/index.js';
 import { conversion } from '../../shared/schema/marketing/conversion.js';
+import { leadEvent } from '../../shared/schema/marketing/lead-event.js';
 import { createChildLogger } from '../../shared/logger/index.js';
 import type { AppKind } from '../../shared/types/app.js';
-import { buildPurchaseEvent, sendEvents, type ConversionRow } from './meta-capi.js';
+import {
+  buildLeadEvent,
+  buildPurchaseEvent,
+  sendEvents,
+  type ConversionRow,
+  type SendOptions,
+} from './meta-capi.js';
 
 const log = createChildLogger({ module: 'capi-upload' });
 
@@ -20,6 +27,9 @@ const MAX_PER_RUN = 5000; // safety cap on rows selected per app per run
 export interface CapiUploadResult {
   skipped?: 'disabled' | 'no_token';
   apps?: Array<{ app: AppKind; selected: number; uploaded: number }>;
+  // CTWA Lead uploads (lead_event) — reported separately so the Purchase
+  // counters keep their original meaning.
+  leads?: Array<{ app: AppKind; selected: number; uploaded: number }>;
 }
 
 interface PendingRow {
@@ -31,6 +41,14 @@ interface PendingRow {
   city: string | null;
   fbc: string | null;
   fbp: string | null;
+  ctwa_clid: string | null;
+}
+
+interface PendingLeadRow {
+  id: number;
+  ctwa_clid: string;
+  wa_phone_hash: string | null;
+  occurred_at: Date;
 }
 
 export async function runCapiUpload(): Promise<CapiUploadResult> {
@@ -51,6 +69,7 @@ export async function runCapiUpload(): Promise<CapiUploadResult> {
   };
 
   const apps: CapiUploadResult['apps'] = [];
+  const leads: CapiUploadResult['leads'] = [];
 
   for (const app of env.MIL_ENABLED_APPS) {
     const pending = await selectPending(app);
@@ -89,9 +108,61 @@ export async function runCapiUpload(): Promise<CapiUploadResult> {
     }
 
     apps.push({ app, selected: pending.length, uploaded });
+    leads.push(await uploadLeads(app, opts));
   }
 
-  return { apps };
+  return { apps, leads };
+}
+
+/** CTWA Lead phase: after the app's Purchase batches, push unsent lead_event
+ * rows as 'Lead' business_messaging events and mark capi_uploaded_at. Same
+ * batch/abort contract as purchases — a failed batch leaves rows for next run. */
+async function uploadLeads(
+  app: AppKind,
+  opts: SendOptions,
+): Promise<{ app: AppKind; selected: number; uploaded: number }> {
+  const pending = await selectPendingLeads(app);
+  let uploaded = 0;
+
+  for (let i = 0; i < pending.length; i += BATCH) {
+    const batch = pending.slice(i, i + BATCH);
+    const events = batch.map((r) =>
+      buildLeadEvent({
+        ctwaClid: r.ctwa_clid,
+        waPhoneHash: r.wa_phone_hash,
+        occurredAt: r.occurred_at,
+      }),
+    );
+    const result = await sendEvents(events, opts);
+
+    if (!result.ok) {
+      log.error(
+        { app, count: batch.length, error: result.error },
+        'CAPI lead batch failed — leaving rows unmarked for next run',
+      );
+      break;
+    }
+
+    await db
+      .update(leadEvent)
+      .set({ capiUploadedAt: new Date() })
+      .where(
+        and(
+          eq(leadEvent.app, app),
+          inArray(
+            leadEvent.id,
+            batch.map((r) => r.id),
+          ),
+        ),
+      );
+    uploaded += batch.length;
+    log.info(
+      { app, count: batch.length, eventsReceived: result.eventsReceived },
+      'CAPI lead batch uploaded',
+    );
+  }
+
+  return { app, selected: pending.length, uploaded };
 }
 
 function toRow(r: PendingRow): ConversionRow {
@@ -104,6 +175,7 @@ function toRow(r: PendingRow): ConversionRow {
     city: r.city,
     fbc: r.fbc,
     fbp: r.fbp,
+    ctwaClid: r.ctwa_clid,
   };
 }
 
@@ -114,7 +186,7 @@ function toRow(r: PendingRow): ConversionRow {
 async function selectPending(app: AppKind): Promise<PendingRow[]> {
   const res = await db.execute(sql`
     select c.order_id, c.user_id, c.value_inr, c.occurred_at, c.action_source, c.city,
-           t.fbc, t.fbp
+           c.ctwa_clid, t.fbc, t.fbp
     from marketing.conversion c
     left join lateral (
       select fbc, fbp
@@ -132,4 +204,15 @@ async function selectPending(app: AppKind): Promise<PendingRow[]> {
     order by c.occurred_at
     limit ${MAX_PER_RUN}`);
   return res.rows as unknown as PendingRow[];
+}
+
+/** CTWA leads not yet uploaded (idx_lead_event_capi_pending is the queue). */
+async function selectPendingLeads(app: AppKind): Promise<PendingLeadRow[]> {
+  const res = await db.execute(sql`
+    select l.id, l.ctwa_clid, l.wa_phone_hash, l.occurred_at
+    from marketing.lead_event l
+    where l.app = ${app} and l.capi_uploaded_at is null
+    order by l.occurred_at
+    limit ${MAX_PER_RUN}`);
+  return res.rows as unknown as PendingLeadRow[];
 }

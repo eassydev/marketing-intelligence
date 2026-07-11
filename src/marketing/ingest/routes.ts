@@ -1,10 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { env } from '../../config/env.js';
 import { makeServiceTokenGuard } from '../../shared/middleware/service-token.js';
-import { conversionIngestSchema, touchIngestSchema, eventsIngestSchema } from './validators.js';
+import {
+  conversionIngestSchema,
+  touchIngestSchema,
+  eventsIngestSchema,
+  leadEventIngestSchema,
+} from './validators.js';
 import { writeConversion } from './conversion-writer.js';
 import { writeTouch } from './touch-writer.js';
 import { writeEvents } from './event-writer.js';
+import { writeLeadEvent } from './lead-event-writer.js';
 
 /**
  * Internal ingest endpoints (BackendNew → MIL). Token-gated for now; when the
@@ -24,6 +30,13 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     const payload = touchIngestSchema.parse(req.body);
     await writeTouch(payload);
     return { ok: true };
+  });
+
+  // Qualified CTWA WhatsApp lead → Meta CAPI 'Lead' upload queue (§D CAPI).
+  app.post('/ingest/lead-event', async (req) => {
+    const payload = leadEventIngestSchema.parse(req.body);
+    const result = await writeLeadEvent(payload);
+    return { ok: true, ...result };
   });
 
   // Batch product-event ingest. Batches are larger and higher-frequency than
