@@ -29,8 +29,10 @@ export const conversion = marketing.table(
     isFirstOrder: boolean('is_first_order').notNull(),
     city: text('city'),
     category: text('category'),
-    actionSource: text('action_source'), // website | app | system_generated
+    actionSource: text('action_source'), // website | app | system_generated | business_messaging
     sessionId: text('session_id'), // resolver hint forwarded at booking
+    ctwaClid: text('ctwa_clid'), // CTWA click id forwarded when the booking came via WhatsApp
+    messagingChannel: text('messaging_channel'), // 'whatsapp' for CTWA-originated bookings
     // Resolver-written:
     attributedChannel: text('attributed_channel'),
     attributedEntityId: bigint('attributed_entity_id', { mode: 'number' }).references(

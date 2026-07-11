@@ -21,6 +21,8 @@ export const attributionTouch = marketing.table(
     wbraid: text('wbraid'),
     fbc: text('fbc'),
     fbp: text('fbp'),
+    ctwaClid: text('ctwa_clid'), // Meta CTWA click id from the WhatsApp referral
+    waPhoneHash: text('wa_phone_hash'), // sha256 hex of E.164 phone (never raw — DPDP)
     utmSource: text('utm_source'),
     utmMedium: text('utm_medium'),
     utmCampaign: text('utm_campaign'),
@@ -36,6 +38,7 @@ export const attributionTouch = marketing.table(
   (t) => [
     index('idx_touch_gclid').on(t.app, t.gclid).where(sql`gclid is not null`),
     index('idx_touch_fbclid').on(t.app, t.fbclid).where(sql`fbclid is not null`),
+    index('idx_touch_ctwa_clid').on(t.app, t.ctwaClid).where(sql`ctwa_clid is not null`),
     index('idx_touch_session')
       .on(t.app, t.sessionId, t.occurredAt.desc())
       .where(sql`session_id is not null`),
