@@ -16,6 +16,7 @@ import {
 } from './queries.js';
 import { appSchema } from '../../shared/types/app.js';
 import { dau, funnel, retention, type EventFilters } from './event-queries.js';
+import { campaignFunnel, type CampaignFunnelFilters } from './campaign-funnel-queries.js';
 
 const querySchema = z.object({
   app: appSchema,
@@ -54,6 +55,32 @@ function parseEventFilters(req: FastifyRequest): EventFilters {
   ago.setUTCDate(ago.getUTCDate() - 29);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   return { app: q.app, from: q.from ?? fmt(ago), to: q.to ?? fmt(today) };
+}
+
+// ── Campaign-funnel query parsing ───────────────────────────────────────────
+const campaignFunnelQuerySchema = z.object({
+  app: appSchema,
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  utm_campaign: z.string().min(1).max(256).optional(),
+  channel: z.enum(['google', 'meta', 'ctwa']).optional(),
+  medium: z.string().min(1).max(256).optional(),
+});
+
+function parseCampaignFunnelFilters(req: FastifyRequest): CampaignFunnelFilters {
+  const q = campaignFunnelQuerySchema.parse(req.query);
+  const today = new Date();
+  const ago = new Date(today);
+  ago.setUTCDate(ago.getUTCDate() - 29);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    app: q.app,
+    from: q.from ?? fmt(ago),
+    to: q.to ?? fmt(today),
+    utmCampaign: q.utm_campaign,
+    channel: q.channel,
+    medium: q.medium,
+  };
 }
 
 const EVENT_NAME_RE = /^[a-z0-9_]{1,64}$/;
@@ -146,6 +173,13 @@ export async function servingRoutes(app: FastifyInstance): Promise<void> {
     const days = parseDays(req);
     const cohort = parseCohort(req);
     return envelope(f.app, { from: f.from, to: f.to }, {}, await retention(f, days, cohort));
+  });
+
+  // ── Campaign-attributed full funnel (Phase 6) ────────────────────────────
+  // data = one row per utm_campaign (a single row when ?utm_campaign= given).
+  app.get('/marketing/metrics/campaign-funnel', async (req) => {
+    const f = parseCampaignFunnelFilters(req);
+    return envelope(f.app, { from: f.from, to: f.to }, {}, await campaignFunnel(f));
   });
 
   // ── LTV:CAC + repeat-rate + cohort revenue (Phase F) ─────────────────────

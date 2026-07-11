@@ -26,6 +26,7 @@ export async function writeTouch(p: TouchIngest): Promise<void> {
     app: p.app,
     occurredAt: p.occurred_at ? new Date(p.occurred_at) : new Date(),
     channel: p.channel ?? inferChannel(p), // explicit (e.g. 'ctwa') wins over inference
+    touchType: p.touch_type ?? 'touch',
     gclid: p.gclid ?? null,
     fbclid: p.fbclid ?? null,
     gbraid: p.gbraid ?? null,

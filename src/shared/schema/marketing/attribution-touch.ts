@@ -28,6 +28,9 @@ export const attributionTouch = marketing.table(
     utmCampaign: text('utm_campaign'),
     utmContent: text('utm_content'),
     utmTerm: text('utm_term'),
+    // 'touch' | 'first_party_click' | 'lead' — first-party clicks/leads from
+    // BackendNew's redirect + lead ingest share the touch spine (no new table).
+    touchType: text('touch_type').notNull().default('touch'),
     sessionId: text('session_id'),
     userId: bigint('user_id', { mode: 'number' }), // resolved when identity known
     landingUrl: text('landing_url'),
@@ -45,6 +48,9 @@ export const attributionTouch = marketing.table(
     index('idx_touch_user')
       .on(t.app, t.userId, t.occurredAt.desc())
       .where(sql`user_id is not null`),
+    index('idx_touch_campaign')
+      .on(t.app, t.utmCampaign, t.occurredAt.desc())
+      .where(sql`utm_campaign is not null`),
     appCheck('touch_app_chk', t.app),
   ],
 );

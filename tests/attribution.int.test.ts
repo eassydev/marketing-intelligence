@@ -119,7 +119,9 @@ describe('attribution spine (integration)', () => {
       wa_phone_hash: waHash,
       raw: { referral: { source_type: 'ad' }, lead_id: 7 },
       consent: true,
-    } as TouchIngest);
+      // Cast bypasses the zod default; the writer's `?? 'touch'` fallback and
+      // the DB default cover producers that predate touch_type (0007).
+    } as unknown as TouchIngest);
 
     const [touch] = await db
       .select()

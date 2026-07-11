@@ -31,6 +31,9 @@ export const touchIngestSchema = z.object({
   // Explicit channel override (CTWA webhooks carry no click-id URL to infer
   // from); when absent the writer infers google/meta from the click ids.
   channel: z.enum(['google', 'meta', 'ctwa']).nullish(),
+  // 'first_party_click' = BackendNew's /r/:slug redirect click worker;
+  // 'lead' = lead ingest. Plain ad/web touches default to 'touch'.
+  touch_type: z.enum(['touch', 'first_party_click', 'lead']).default('touch'),
   gclid: z.string().nullish(),
   fbclid: z.string().nullish(),
   gbraid: z.string().nullish(),
