@@ -11,6 +11,7 @@ import { decisionsRoutes } from './marketing/actions/routes.js';
 import { alertsRoutes } from './marketing/alerts/routes.js';
 import { insightsRoutes } from './marketing/insights/routes.js';
 import { geoRoutes } from './marketing/geo/routes.js';
+import { reviewsRoutes } from './marketing/reviews/routes.js';
 
 /**
  * Build the Fastify app WITHOUT starting workers or listening. Kept separate
@@ -94,6 +95,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(alertsRoutes);
   await app.register(insightsRoutes);
   await app.register(geoRoutes);
+  await app.register(reviewsRoutes);
 
   return app;
 }

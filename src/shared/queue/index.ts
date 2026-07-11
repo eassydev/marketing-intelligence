@@ -33,6 +33,7 @@ export const geoMonitorQueue = new Queue(qn('geo-monitor'), { connection });
 export const capiMetaQueue = new Queue(qn('capi-meta'), { connection });
 export const eventsMaintainQueue = new Queue(qn('events-maintain'), { connection });
 export const segmentsRefreshQueue = new Queue(qn('segments-refresh'), { connection });
+export const reviewsIngestQueue = new Queue(qn('reviews-ingest'), { connection });
 
 // Segment refreshes are heavier and rebuild whole membership tables; give them a
 // longer backoff and only 2 attempts (a bad definition should surface fast).
@@ -161,6 +162,21 @@ export function startWorkers(): Worker[] {
   );
   workers.push(segmentsWorker);
 
+  const reviewsWorker = new Worker(
+    qn('reviews-ingest'),
+    async (job) => {
+      // runReviewsIngest no-ops with a log when no source creds are configured.
+      const { runReviewsIngest } = await import('../../marketing/reviews/run.js');
+      log.info({ jobId: job.id }, 'running reviews ingest');
+      return runReviewsIngest();
+    },
+    { connection, concurrency: 1 },
+  );
+  reviewsWorker.on('failed', (job, err) =>
+    log.error({ queue: qn('reviews-ingest'), jobId: job?.id, err }, 'job failed'),
+  );
+  workers.push(reviewsWorker);
+
   const capiWorker = new Worker(
     qn('capi-meta'),
     async (job) => {
@@ -221,6 +237,13 @@ export async function setupRecurringJobs(): Promise<void> {
     'segments-refresh-due',
     { pattern: '12,27,42,57 * * * *', tz },
     { name: 'refresh-due', data: {}, opts: segmentJobOptions },
+  );
+  // Daily (02:45 IST): store/GBP review snapshots. One row per source per day;
+  // no-ops with a log when no source creds are configured.
+  await reviewsIngestQueue.upsertJobScheduler(
+    'reviews-ingest',
+    { pattern: '45 2 * * *', tz },
+    { name: 'reviews-ingest', data: {}, opts: defaultJobOptions },
   );
   // 20 min after ingest-meta/resolve so attribution has settled. No-ops while
   // META_CAPI_ENABLED is false, so this is safe to schedule now.

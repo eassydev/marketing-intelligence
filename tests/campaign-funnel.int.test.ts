@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import pg from 'pg';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -10,6 +10,11 @@ import { randomUUID } from 'node:crypto';
 // Covers the Phase 6 campaign-attributed funnel end to end: touches (incl.
 // touch_type='first_party_click'), app_event stages, identity_link stitching,
 // conversions and ad spend — plus the offline-campaign NULL-impressions case.
+// Configure the zero-config app_store review source BEFORE config/env loads
+// (dynamic imports happen in beforeAll) so the reviews-ingest round-trip below
+// exercises the real factory→run→query path against this container.
+process.env.APP_STORE_APP_ID = '123456789';
+
 let container: StartedPostgreSqlContainer;
 let campaignFunnel: typeof import('../src/marketing/serving/campaign-funnel-queries.js')['campaignFunnel'];
 let db: typeof import('../src/shared/db/index.js')['db'];
@@ -172,5 +177,46 @@ describe('campaignFunnel (integration)', () => {
       [ADS_CAMPAIGN, OFFLINE_CAMPAIGN].sort(),
     );
     expect(rows.find((r) => r.utm_campaign === ADS_CAMPAIGN)!.ad_spend_inr).toBe(5000);
+  });
+});
+
+describe('reviews ingest → trend (integration)', () => {
+  it('writes one snapshot per source per day (idempotent) and serves the trend', async () => {
+    const { runReviewsIngest } = await import('../src/marketing/reviews/run.js');
+    const { reviewsTrend } = await import('../src/marketing/reviews/queries.js');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          results: [{ averageUserRating: 4.5766, userRatingCount: 12345 }],
+        }),
+      })),
+    );
+
+    const first = await runReviewsIngest();
+    expect(first).toEqual({ sources: 1, written: 1, failed: 0 });
+
+    // Same IST day again → UNIQUE(app, source, snapshot_date) dedups.
+    const second = await runReviewsIngest();
+    expect(second).toEqual({ sources: 1, written: 0, failed: 0 });
+    vi.unstubAllGlobals();
+
+    // ±2-day window comfortably spans "today in IST" from any test timezone.
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const rows = await reviewsTrend({
+      app: APP,
+      from: fmt(new Date(Date.now() - 2 * 86_400_000)),
+      to: fmt(new Date(Date.now() + 2 * 86_400_000)),
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      source: 'app_store',
+      rating_avg: 4.58,
+      rating_count: 12345,
+      new_reviews_count: null,
+    });
   });
 });

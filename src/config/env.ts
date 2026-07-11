@@ -110,6 +110,17 @@ export const envSchema = z
   META_CAPI_DATASET_ID: z.string().default('1717873222070120'), // existing pixel id
   META_CAPI_TEST_EVENT_CODE: z.string().optional(), // Meta "Test Events" mode
 
+  // Store / GBP review ingestion (Phase 6). Each source is skipped with a log
+  // line when its creds are absent (mirrors the geo engine factory) — all
+  // optional, defaults keep every source off.
+  GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(), // e.g. com.eassylife.customer
+  GOOGLE_PLAY_SA_KEY_JSON: z.string().optional(), // service-account key file JSON
+  APP_STORE_APP_ID: z.string().optional(), // numeric Apple app id (iTunes lookup)
+  APP_STORE_COUNTRY: z.string().min(2).default('in'), // storefront for the lookup
+  GBP_ACCOUNT_ID: z.string().optional(),
+  GBP_LOCATION_ID: z.string().optional(),
+  GBP_SA_KEY_JSON: z.string().optional(), // service-account key file JSON
+
   GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
   GOOGLE_ADS_CLIENT_ID: z.string().optional(),
   GOOGLE_ADS_CLIENT_SECRET: z.string().optional(),
