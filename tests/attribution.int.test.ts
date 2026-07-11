@@ -109,6 +109,51 @@ describe('attribution spine (integration)', () => {
     expect(Number(row?.cost_per_first_order_inr)).toBe(3000);
   });
 
+  it('persists CTWA touch and conversion fields end to end', async () => {
+    const waHash = 'b'.repeat(64);
+    await writeTouch({
+      app: APP,
+      session_id: 'wa-wamid.TEST1',
+      channel: 'ctwa',
+      ctwa_clid: 'ctwa-clid-1',
+      wa_phone_hash: waHash,
+      raw: { referral: { source_type: 'ad' }, lead_id: 7 },
+      consent: true,
+    } as TouchIngest);
+
+    const [touch] = await db
+      .select()
+      .from(schema.attributionTouch)
+      .where(eq(schema.attributionTouch.sessionId, 'wa-wamid.TEST1'));
+    expect(touch).toMatchObject({
+      channel: 'ctwa',
+      ctwaClid: 'ctwa-clid-1',
+      waPhoneHash: waHash,
+    });
+    expect(touch?.raw).toEqual({ referral: { source_type: 'ad' }, lead_id: 7 });
+
+    await writeConversion({
+      app: APP,
+      order_id: 'O-ctwa-int-1',
+      value_inr: 750,
+      is_first_order: true,
+      action_source: 'business_messaging',
+      messaging_channel: 'whatsapp',
+      ctwa_clid: 'ctwa-clid-1',
+      occurred_at: '2026-06-21T10:00:00Z',
+    } as ConversionIngest);
+
+    const [conv] = await db
+      .select()
+      .from(schema.conversion)
+      .where(eq(schema.conversion.orderId, 'O-ctwa-int-1'));
+    expect(conv).toMatchObject({
+      actionSource: 'business_messaging',
+      messagingChannel: 'whatsapp',
+      ctwaClid: 'ctwa-clid-1',
+    });
+  });
+
   it('dry-run action port logs a proposed decision without mutating ads', async () => {
     const { actionPort } = await import('../src/marketing/actions/index.js');
     expect(actionPort.mode).toBe('dry_run');

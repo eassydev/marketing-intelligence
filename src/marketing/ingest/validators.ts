@@ -12,9 +12,13 @@ export const conversionIngestSchema = z.object({
   is_first_order: z.boolean(),
   city: z.string().nullish(),
   category: z.string().nullish(),
-  action_source: z.enum(['website', 'app', 'system_generated']).default('app'),
+  action_source: z
+    .enum(['website', 'app', 'system_generated', 'business_messaging'])
+    .default('app'),
   occurred_at: z.string().datetime(),
   session_id: z.string().nullish(),
+  ctwa_clid: z.string().min(1).max(512).nullish(),
+  messaging_channel: z.enum(['whatsapp']).nullish(),
 });
 export type ConversionIngest = z.infer<typeof conversionIngestSchema>;
 
@@ -24,12 +28,20 @@ export const touchIngestSchema = z.object({
   session_id: z.string().min(1),
   user_id: z.number().int().positive().nullish(),
   occurred_at: z.string().datetime().optional(),
+  // Explicit channel override (CTWA webhooks carry no click-id URL to infer
+  // from); when absent the writer infers google/meta from the click ids.
+  channel: z.enum(['google', 'meta', 'ctwa']).nullish(),
   gclid: z.string().nullish(),
   fbclid: z.string().nullish(),
   gbraid: z.string().nullish(),
   wbraid: z.string().nullish(),
   fbc: z.string().nullish(),
   fbp: z.string().nullish(),
+  ctwa_clid: z.string().min(1).max(512).nullish(),
+  wa_phone_hash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, 'wa_phone_hash must be 64 lowercase hex chars (sha256 of E.164)')
+    .nullish(),
   utm_source: z.string().nullish(),
   utm_medium: z.string().nullish(),
   utm_campaign: z.string().nullish(),
@@ -38,6 +50,7 @@ export const touchIngestSchema = z.object({
   landing_url: z.string().nullish(),
   referrer: z.string().nullish(),
   consent: z.boolean().default(false),
+  raw: z.record(z.unknown()).nullish(), // e.g. CTWA {referral, lead_id} webhook context
 });
 export type TouchIngest = z.infer<typeof touchIngestSchema>;
 

@@ -25,13 +25,15 @@ export async function writeTouch(p: TouchIngest): Promise<void> {
   await db.insert(attributionTouch).values({
     app: p.app,
     occurredAt: p.occurred_at ? new Date(p.occurred_at) : new Date(),
-    channel: inferChannel(p),
+    channel: p.channel ?? inferChannel(p), // explicit (e.g. 'ctwa') wins over inference
     gclid: p.gclid ?? null,
     fbclid: p.fbclid ?? null,
     gbraid: p.gbraid ?? null,
     wbraid: p.wbraid ?? null,
     fbc: p.fbc ?? null,
     fbp: p.fbp ?? null,
+    ctwaClid: p.ctwa_clid ?? null,
+    waPhoneHash: p.wa_phone_hash ?? null,
     utmSource: p.utm_source ?? null,
     utmMedium: p.utm_medium ?? null,
     utmCampaign: p.utm_campaign ?? null,
@@ -42,6 +44,7 @@ export async function writeTouch(p: TouchIngest): Promise<void> {
     landingUrl: p.landing_url ?? null,
     referrer: p.referrer ?? null,
     consent: p.consent,
+    raw: p.raw ?? null,
   });
 
   if (p.user_id != null) {

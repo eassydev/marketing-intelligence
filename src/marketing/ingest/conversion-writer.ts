@@ -22,6 +22,8 @@ export async function writeConversion(
       category: p.category ?? null,
       actionSource: p.action_source,
       sessionId: p.session_id ?? null,
+      ctwaClid: p.ctwa_clid ?? null,
+      messagingChannel: p.messaging_channel ?? null,
     })
     .onConflictDoNothing({ target: [conversion.app, conversion.orderId] })
     .returning({ id: conversion.id });
