@@ -37,11 +37,16 @@ export const reviewsIngestQueue = new Queue(qn('reviews-ingest'), { connection }
 
 // Segment refreshes are heavier and rebuild whole membership tables; give them a
 // longer backoff and only 2 attempts (a bad definition should surface fast).
+// removeOnComplete/removeOnFail MUST be true here: refresh jobs use the dedup id
+// `refresh-<segmentId>`, and BullMQ silently ignores add() while a job with that id
+// exists in ANY state — a retained completed/failed job would starve all future
+// refreshes (each tick logs "due" but nothing runs). Failure detail is persisted to
+// segment.last_error by refreshSegment(), so BullMQ job retention adds nothing.
 const segmentJobOptions = {
   attempts: 2,
   backoff: { type: 'exponential' as const, delay: 120_000 },
-  removeOnComplete: 200,
-  removeOnFail: false,
+  removeOnComplete: true,
+  removeOnFail: true,
 };
 
 const workers: Worker[] = [];

@@ -58,7 +58,16 @@ async function enqueueRefresh(id: number): Promise<void> {
   await segmentsRefreshQueue.add(
     'refresh-segment',
     { segmentId: id },
-    { jobId: `refresh-${id}`, attempts: 2, backoff: { type: 'exponential', delay: 120_000 } },
+    {
+      jobId: `refresh-${id}`,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 120_000 },
+      // Must not retain finished jobs: BullMQ ignores add() while a job with the
+      // same id exists in ANY state, so a retained completed/failed job would
+      // starve future refreshes. Failures live in segment.last_error instead.
+      removeOnComplete: true,
+      removeOnFail: true,
+    },
   );
 }
 
