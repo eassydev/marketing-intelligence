@@ -6,6 +6,8 @@ import { ZodError } from 'zod';
 import { env } from './config/env.js';
 import { servingRoutes } from './marketing/serving/routes.js';
 import { segmentsRoutes } from './marketing/segments/routes.js';
+import { eventRegistryRoutes } from './marketing/events/registry-routes.js';
+import { eventsMonitorRoutes } from './marketing/events/monitor-routes.js';
 import { ingestRoutes } from './marketing/ingest/routes.js';
 import { decisionsRoutes } from './marketing/actions/routes.js';
 import { alertsRoutes } from './marketing/alerts/routes.js';
@@ -90,6 +92,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(servingRoutes);
   await app.register(segmentsRoutes);
+  await app.register(eventRegistryRoutes);
+  await app.register(eventsMonitorRoutes);
   await app.register(ingestRoutes);
   await app.register(decisionsRoutes);
   await app.register(alertsRoutes);
