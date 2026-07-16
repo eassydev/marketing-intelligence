@@ -180,6 +180,9 @@ describe('events overview (integration)', () => {
     });
     // Registered but never fired → appended at zero, stale under a cadence.
     await createRegistry({ source: 'app', event_name: 'el_ghost', expected_frequency: 'daily' });
+    // WHOLE-app-stream definition (event_name '') — must fold the per-event
+    // app rows (regression: used to pin at 0/never/stale while events flowed).
+    await createRegistry({ source: 'app', event_name: '', expected_frequency: 'daily' });
 
     const res = await app.inject({ method: 'GET', url: `/marketing/events/overview?app=${APP}`, headers: auth() });
     expect(res.statusCode).toBe(200);
@@ -203,6 +206,13 @@ describe('events overview (integration)', () => {
 
     // app / el_ghost: registered, never fired → zero counts, stale.
     expect(find('app', 'el_ghost')).toMatchObject({ count_24h: 0, count_7d: 0, last_seen: null, health: 'stale' });
+
+    // app / whole-stream (''→null): counts folded from the per-event app rows
+    // (el_home_view + el_checkout), freshest last_seen, daily cadence → ok.
+    const wholeApp = find('app', null);
+    expect(wholeApp).toMatchObject({ count_24h: 2, count_7d: 2, health: 'ok' });
+    expect(wholeApp.last_seen).toBe(home.last_seen);
+    expect(wholeApp.registry).toMatchObject({ expected_frequency: 'daily' });
 
     // click: whole-stream row (event_name null), daily registered, 2h old → ok.
     const click = find('click', null);
