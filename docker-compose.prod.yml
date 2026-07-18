@@ -33,6 +33,23 @@ services:
       retries: 5
       start_period: 20s
 
+  # Cloudflare Tunnel sidecar: outbound-only path for the public touch beacon
+  # (Cloudflare Worker → tunnel → mil:5100). No inbound port is opened on the VM
+  # and no cloud SG change is needed. Configure the tunnel's public hostname in
+  # the Cloudflare dashboard with an ingress PATH RULE exposing ONLY
+  # /ingest/touch (catch-all → 404) so serving/admin routes stay private.
+  # Requires CLOUDFLARE_TUNNEL_TOKEN in .env.production; the service is a no-op
+  # crash-loop without it, so only enable alongside a real tunnel.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ${MIL_INSTANCE_NAME:-mil}-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - mil
+
   redis:
     image: redis:7-alpine
     container_name: ${MIL_INSTANCE_NAME:-mil}-redis

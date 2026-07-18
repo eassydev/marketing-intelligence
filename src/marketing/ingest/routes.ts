@@ -26,11 +26,19 @@ export async function ingestRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true, ...result };
   });
 
-  app.post('/ingest/touch', async (req) => {
-    const payload = touchIngestSchema.parse(req.body);
-    await writeTouch(payload);
-    return { ok: true };
-  });
+  // Touches arrive both from BackendNew (VPC) and — via the Cloudflare Worker
+  // beacon + tunnel — from the public web/app. All tunnel traffic shares one
+  // egress IP, so the global 100/min IP-keyed limit would throttle the whole
+  // beacon fleet; the edge Worker already rate-limits per client IP.
+  app.post(
+    '/ingest/touch',
+    { config: { rateLimit: { max: 1200, timeWindow: '1 minute' } } },
+    async (req) => {
+      const payload = touchIngestSchema.parse(req.body);
+      await writeTouch(payload);
+      return { ok: true };
+    },
+  );
 
   // Qualified CTWA WhatsApp lead → Meta CAPI 'Lead' upload queue (§D CAPI).
   app.post('/ingest/lead-event', async (req) => {

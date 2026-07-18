@@ -178,4 +178,33 @@ describe('attribution spine (integration)', () => {
     });
     expect(row?.actionParams).toEqual({ amountInr: 250 });
   });
+
+  it('conversion carrying both session_id and user_id upserts identity_link', async () => {
+    const conv = {
+      app: APP,
+      order_id: 'O-stitch-1',
+      user_id: 77,
+      value_inr: 500,
+      is_first_order: false,
+      action_source: 'website',
+      occurred_at: '2026-06-22T10:00:00Z',
+      session_id: '123e4567-e89b-42d3-a456-426614174777',
+    } as ConversionIngest;
+
+    await writeConversion(conv);
+    const links = await db
+      .select()
+      .from(schema.identityLink)
+      .where(eq(schema.identityLink.sessionId, '123e4567-e89b-42d3-a456-426614174777'));
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ userId: 77 });
+
+    // Idempotent: the deduped retry must not duplicate the link.
+    await writeConversion(conv);
+    const again = await db
+      .select()
+      .from(schema.identityLink)
+      .where(eq(schema.identityLink.sessionId, '123e4567-e89b-42d3-a456-426614174777'));
+    expect(again).toHaveLength(1);
+  });
 });
