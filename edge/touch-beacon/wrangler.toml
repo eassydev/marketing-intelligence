@@ -1,0 +1,27 @@
+# Cloudflare Worker: public touch beacon (t.eassylife.in) → MIL /ingest/touch.
+# Deploy: `wrangler deploy` from this directory (Cloudflare account with the
+# eassylife.in zone). Secret: `wrangler secret put INGEST_TOKEN` (= the MIL
+# INTERNAL_INGEST_TOKEN). See README.md for the full runbook.
+name = "mil-touch-beacon"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+# First-party hostname (requires the eassylife.in zone on this account).
+routes = [
+  { pattern = "t.eassylife.in/*", zone_name = "eassylife.in" }
+]
+
+[vars]
+# Origin of the Cloudflare Tunnel that fronts MIL's /ingest/touch.
+MIL_ORIGIN = "https://mil-ingest.eassylife.in"
+# Comma-separated browser origins allowed to send beacons (native apps send no
+# Origin header and are always allowed).
+ALLOWED_ORIGINS = "https://eassylife.in,https://www.eassylife.in,https://www.eassy.life"
+
+# Per-client-IP rate limit: 10 beacons/min is generous for real users and cheap
+# insurance against abuse. MIL's own per-route limit (1200/min) is the backstop.
+[[unsafe.bindings]]
+name = "TOUCH_RATE"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
