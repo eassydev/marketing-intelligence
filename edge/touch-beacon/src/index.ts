@@ -53,16 +53,31 @@ async function forwardToMil(payload: unknown, env: Env): Promise<void> {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      // Cloudflare STRIPS Authorization from a Worker subrequest to a hostname
+      // on the same zone (which mil-ingest.eassylife.in is), so the bearer alone
+      // arrives as an unauthenticated 401. X-Service-Token survives the hop and
+      // MIL's guard accepts either. Authorization is kept for any future
+      // off-zone origin.
       authorization: `Bearer ${env.INGEST_TOKEN}`,
+      'x-service-token': env.INGEST_TOKEN,
     },
     body: JSON.stringify(payload),
   };
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await fetch(url, init);
-      if (res.ok || res.status < 500) return; // 4xx won't improve on retry
-    } catch {
-      // network error — retry once, then give up (fail-open by design)
+      if (res.ok) return;
+      // The client already got its 204, so a failure here is invisible unless we
+      // log it — without this the whole pipeline fails silently.
+      const detail = await res.text().catch(() => '');
+      console.error(
+        `mil forward failed status=${res.status} attempt=${attempt} url=${url} body=${detail.slice(0, 200)}`,
+      );
+      if (res.status < 500) return; // 4xx won't improve on retry
+    } catch (err) {
+      console.error(
+        `mil forward threw attempt=${attempt} url=${url} err=${(err as Error).message}`,
+      );
     }
   }
 }

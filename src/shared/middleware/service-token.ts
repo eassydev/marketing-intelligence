@@ -14,6 +14,12 @@ export type ServicePrincipal = 'ingest' | 'serving';
  * Two principals exist: `ingest` (BackendNew → MIL writes) and `serving`
  * (Looker → MIL reads), each with its own token, so a leaked read token cannot
  * write conversions.
+ *
+ * The token may arrive as `Authorization: Bearer <t>` OR as `X-Service-Token: <t>`.
+ * The fallback exists because Cloudflare strips `Authorization` from a Worker
+ * subrequest to a hostname on the same zone — the edge touch beacon
+ * (edge/touch-beacon → tunnel → /ingest/touch) is exactly that shape, and would
+ * otherwise arrive unauthenticated. Both headers are equally secret over TLS.
  */
 export function makeServiceTokenGuard(principal: ServicePrincipal, expected: string) {
   if (!expected) {
@@ -28,12 +34,18 @@ export function makeServiceTokenGuard(principal: ServicePrincipal, expected: str
     reply: FastifyReply,
   ): Promise<void> {
     const header = request.headers.authorization;
-    if (!header?.startsWith('Bearer ')) {
+    const altHeader = request.headers['x-service-token'];
+    const presented = header?.startsWith('Bearer ')
+      ? header.slice(7)
+      : typeof altHeader === 'string' && altHeader
+        ? altHeader
+        : null;
+
+    if (presented === null) {
       await reply.status(401).send({ error: 'Missing bearer token' });
       return;
     }
 
-    const presented = header.slice(7);
     if (!expected || !constantTimeEqual(presented, expected)) {
       log.warn({ principal, ip: request.ip, url: request.url }, 'Service token mismatch');
       await reply.status(403).send({ error: 'Forbidden' });
