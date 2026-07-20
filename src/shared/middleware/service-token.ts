@@ -42,6 +42,10 @@ export function makeServiceTokenGuard(principal: ServicePrincipal, expected: str
         : null;
 
     if (presented === null) {
+      log.warn(
+        { principal, url: request.url, headerNames: Object.keys(request.headers).join(',') },
+        'auth header absent — received header names logged (names only, no values)',
+      );
       await reply.status(401).send({ error: 'Missing bearer token' });
       return;
     }
