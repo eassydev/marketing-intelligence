@@ -63,11 +63,6 @@ async function forwardToMil(payload: unknown, env: Env): Promise<void> {
     },
     body: JSON.stringify(payload),
   };
-  console.log(
-    `forward token_len=${(env.INGEST_TOKEN ?? '').length} hdrs=${Object.keys(
-      init.headers as Record<string, string>,
-    ).join('|')}`,
-  );
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await fetch(url, init);
