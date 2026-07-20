@@ -16,7 +16,7 @@ routes = [
 MIL_ORIGIN = "https://mil-ingest.eassylife.in"
 # Comma-separated browser origins allowed to send beacons (native apps send no
 # Origin header and are always allowed).
-ALLOWED_ORIGINS = "https://eassylife.in,https://www.eassylife.in,https://www.eassy.life"
+ALLOWED_ORIGINS = "https://eassy.life,https://www.eassy.life,https://eassylife.in,https://www.eassylife.in"
 
 # Per-client-IP rate limit: 10 beacons/min is generous for real users and cheap
 # insurance against abuse. MIL's own per-route limit (1200/min) is the backstop.
