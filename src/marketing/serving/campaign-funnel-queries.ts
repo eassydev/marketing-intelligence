@@ -80,7 +80,12 @@ const window = (col: SQL, f: CampaignFunnelFilters): SQL =>
  * never applied to touches_attr, which must see every campaign touch. */
 function touchFilters(f: CampaignFunnelFilters): SQL {
   const parts: SQL[] = [sql`t.utm_campaign is not null`];
-  if (f.utmCampaign) parts.push(sql`lower(t.utm_campaign) = lower(${f.utmCampaign})`);
+  // Match either the raw utm value or the campaign it resolves to, so filtering
+  // by campaign name still finds touches that carried the numeric ad id.
+  if (f.utmCampaign)
+    parts.push(
+      sql`(lower(t.utm_campaign) = lower(${f.utmCampaign}) or lower(ca.campaign_name) = lower(${f.utmCampaign}))`,
+    );
   if (f.channel) parts.push(sql`t.channel = ${f.channel}`);
   if (f.medium) parts.push(sql`t.utm_medium = ${f.medium}`);
   return sql.join(parts, sql` and `);
@@ -92,8 +97,11 @@ export async function campaignFunnel(
   const lookbackDays = env.MIL_CLICK_LOOKBACK_DAYS;
 
   // Ad-side filters (name-matched to utm_campaign; no medium concept).
-  const adParts: SQL[] = [sql`e.name is not null`];
-  if (f.utmCampaign) adParts.push(sql`lower(e.name) = lower(${f.utmCampaign})`);
+  // Filters now target the RESOLVED campaign (ec.*), not the ad-level entity —
+  // filtering by campaign name must not depend on which level the perf fact
+  // hangs off.
+  const adParts: SQL[] = [sql`ec.campaign_name is not null`];
+  if (f.utmCampaign) adParts.push(sql`lower(ec.campaign_name) = lower(${f.utmCampaign})`);
   if (f.channel) adParts.push(sql`e.channel = ${f.channel}`);
   const adFilters = sql.join(adParts, sql` and `);
 
@@ -102,27 +110,75 @@ export async function campaignFunnel(
   const universeJoin = f.medium ? sql`left join` : sql`full outer join`;
 
   const res = await db.execute(sql`
-    with touch_campaigns as (
-      -- Campaign universe, touch side: campaigns seen in-window + their
-      -- first-party click counts.
-      select lower(t.utm_campaign) as campaign_key,
-             min(t.utm_campaign) as utm_campaign,
+    with entity_campaign as (
+      -- Resolve EVERY ad entity to its campaign-level ancestor, keyed by
+      -- external_id. Both sides of the funnel canonicalise through this, which
+      -- is what lets a touch join to its spend:
+      --   * Ads pass Meta's numeric campaign id as utm_campaign, while perf
+      --     facts hang off AD-level entities whose names differ from the
+      --     campaign's ("2 Bathroom Cleaning" vs "el_June26_Mumbai_Campaign").
+      --     Matching on lower(name) = lower(utm_campaign) therefore never hit,
+      --     leaving paid campaigns permanently at first_party_clicks = 0.
+      --   * Names are also inconsistent across levels ("2 Bathroom Cleaning" /
+      --     "2 BathroomCleaning" / "2BathroomCleaning"), so ids are the only
+      --     stable key.
+      -- Two hops covers ad → adset → campaign; a campaign resolves to itself.
+      select e.id as entity_id,
+             lower(e.external_id) as ext_key,
+             lower(e.name) as name_key,
+             lower(coalesce(c2.external_id, c1.external_id, e.external_id)) as campaign_key,
+             coalesce(c2.name, c1.name, e.name) as campaign_name
+      from marketing.ad_entity e
+      left join marketing.ad_entity c1
+        on c1.app = e.app and c1.channel = e.channel
+       and c1.external_id = e.parent_external_id
+      left join marketing.ad_entity c2
+        on c2.app = c1.app and c2.channel = c1.channel
+       and c2.external_id = c1.parent_external_id
+      where e.app = ${f.app}
+    ),
+    campaign_alias as (
+      -- Every way a touch might name its campaign → the campaign it belongs to.
+      -- Both aliases are required: Meta ads emit the numeric id, while short
+      -- links (/r/:slug), offline and QR campaigns emit the NAME (the original
+      -- map-touch-to-entity convention). DISTINCT ON collapses names shared by
+      -- several entities (e.g. the same name at ad and adset level) so a join
+      -- on alias can never fan out and multiply first_party_clicks.
+      select distinct on (alias) alias, campaign_key, campaign_name
+      from (
+        select ext_key as alias, campaign_key, campaign_name
+          from entity_campaign where ext_key is not null
+        union all
+        select name_key as alias, campaign_key, campaign_name
+          from entity_campaign where name_key is not null
+      ) a
+      order by alias, campaign_key
+    ),
+    touch_campaigns as (
+      -- Campaign universe, touch side. utm_campaign is resolved to its campaign
+      -- via either alias; unmatched values keep the raw string so offline/QR/
+      -- society campaigns (no ad entity at all) still appear.
+      select coalesce(ca.campaign_key, lower(t.utm_campaign)) as campaign_key,
+             min(coalesce(ca.campaign_name, t.utm_campaign)) as utm_campaign,
              count(*) filter (where t.touch_type = 'first_party_click')::float8
                as first_party_clicks
       from marketing.attribution_touch t
+      left join campaign_alias ca on ca.alias = lower(t.utm_campaign)
       where t.app = ${f.app} and ${window(sql`t.occurred_at`, f)} and ${touchFilters(f)}
       group by 1
     ),
     ad_campaigns as (
-      -- Campaign universe, ad side: spend/impressions/clicks name-matched to
-      -- utm_campaign (map-touch-to-entity convention).
-      select lower(e.name) as campaign_key,
-             min(e.name) as utm_campaign,
+      -- Campaign universe, ad side: perf facts are ad-level, rolled up to the
+      -- campaign ancestor. Grouping by the campaign id (not the entity name)
+      -- also collapses the duplicate-name entities that previously split spend.
+      select ec.campaign_key,
+             min(ec.campaign_name) as utm_campaign,
              sum(p.impressions)::float8 as impressions,
              sum(p.clicks)::float8 as ad_clicks,
              sum(p.spend_inr)::float8 as ad_spend_inr
       from marketing.ad_performance_daily p
       join marketing.ad_entity e on e.id = p.ad_entity_id
+      join entity_campaign ec on ec.entity_id = e.id
       where p.app = ${f.app} and p.stat_date between ${f.from} and ${f.to} and ${adFilters}
       group by 1
     ),
@@ -147,10 +203,11 @@ export async function campaignFunnel(
       -- window widened backwards by the lookback so an event on the from-date
       -- can still match.
       select ${identityKey('t')} as id,
-             lower(t.utm_campaign) as campaign_key,
+             coalesce(ca.campaign_key, lower(t.utm_campaign)) as campaign_key,
              t.occurred_at
       from marketing.attribution_touch t
       ${identityJoin('t')}
+      left join campaign_alias ca on ca.alias = lower(t.utm_campaign)
       where t.app = ${f.app}
         and t.occurred_at >= ((${f.from}::date - ${lookbackDays}::int))::timestamptz
         and t.occurred_at < ((${f.to}::date + 1))::timestamptz
