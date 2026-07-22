@@ -101,7 +101,12 @@ const SEEDS: SeedSpec[] = [
         op: 'AND',
         criteria: [
           { kind: 'event', event: 'el_add_to_cart', performed: true, window_days: 2 },
-          { kind: 'event', event: 'purchase', performed: false, window_days: 2 },
+          // 'charged' is what the services checkout actually emits
+          // (appEventServices.dart onBookingSuccessfulEvent); 'purchase' exists
+          // only on the flights screen. Negating a name that never fires made
+          // the EXCEPT subtract nothing, so this segment silently included
+          // people who had already bought.
+          { kind: 'event', event: 'charged', performed: false, window_days: 2 },
         ],
       },
     }),
