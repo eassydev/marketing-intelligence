@@ -230,6 +230,54 @@ describe('campaignFunnel (integration)', () => {
     expect(beta[0]!.orders).toBe(1);
     expect(beta[0]!.revenue_inr).toBe(500);
   });
+
+  it('grace: a late server-side signup touch attributes the install; a late first_party_click does not', async () => {
+    // Two identities each install with NO touch before the event.
+    //  fsg1: a signup touch (server-side, carries first-touch utm) lands 3h
+    //        later — within MIL_TOUCH_GRACE_HOURS — so the install attributes.
+    //  fsg2: a first_party_click lands after the install — a genuine later
+    //        visit — so it must NOT attribute (it could not have caused it).
+    await db.insert(schema.appEvent).values([
+      {
+        app: APP,
+        eventId: randomUUID(),
+        eventName: 'el_first_open',
+        occurredAt: new Date('2026-06-15T10:00:00Z'),
+        sessionId: 'fsg1',
+      },
+      {
+        app: APP,
+        eventId: randomUUID(),
+        eventName: 'el_first_open',
+        occurredAt: new Date('2026-06-15T10:00:00Z'),
+        sessionId: 'fsg2',
+      },
+    ]);
+    await db.insert(schema.attributionTouch).values([
+      {
+        app: APP,
+        occurredAt: new Date('2026-06-15T13:00:00Z'),
+        touchType: 'touch',
+        sessionId: 'fsg1',
+        utmCampaign: 'cf_grace_signup',
+        consent: true,
+      },
+      {
+        app: APP,
+        occurredAt: new Date('2026-06-15T13:00:00Z'),
+        touchType: 'first_party_click',
+        sessionId: 'fsg2',
+        utmCampaign: 'cf_grace_fpc',
+        consent: true,
+      },
+    ]);
+
+    const rows = await campaignFunnel({ app: APP, ...F });
+    expect(rows.find((r) => r.utm_campaign === 'cf_grace_signup')?.installs).toBe(1);
+    // The fpc campaign still appears (its first_party_click is in the universe)
+    // but the post-event click attributes no install.
+    expect(rows.find((r) => r.utm_campaign === 'cf_grace_fpc')?.installs).toBe(0);
+  });
 });
 
 describe('reviews ingest → trend (integration)', () => {
