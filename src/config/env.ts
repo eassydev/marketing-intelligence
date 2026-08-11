@@ -41,6 +41,13 @@ export const envSchema = z
   MIL_ENABLED_APPS: z.string().optional(),
   MIL_ACTION_MODE: z.enum(['dry_run', 'live']).default('dry_run'),
   MIL_CLICK_LOOKBACK_DAYS: z.coerce.number().int().positive().default(7),
+  // Campaign-funnel grace: how many hours AFTER a conversion/stage event an
+  // identity-matched SERVER-SIDE touch (signup/booking forward — stamped at
+  // API-call time, carrying the identity's first-touch utm) may still attribute.
+  // Corrects server-stamping lag only; attribution still requires a deterministic
+  // identity link (never time-proximity across identities), and first_party_click
+  // touches are never eligible after the event. Set 0 for strict before-only.
+  MIL_TOUCH_GRACE_HOURS: z.coerce.number().int().nonnegative().default(24),
   // app_event retention: partitions older than this many months are dropped by
   // the monthly events-maintain job. 13 keeps a rolling year + current month.
   MIL_EVENTS_RETENTION_MONTHS: z.coerce.number().int().positive().default(13),

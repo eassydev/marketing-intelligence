@@ -95,6 +95,7 @@ export async function campaignFunnel(
   f: CampaignFunnelFilters,
 ): Promise<CampaignFunnelRow[]> {
   const lookbackDays = env.MIL_CLICK_LOOKBACK_DAYS;
+  const graceHours = env.MIL_TOUCH_GRACE_HOURS;
 
   // Ad-side filters (name-matched to utm_campaign; no medium concept).
   // Filters now target the RESOLVED campaign (ec.*), not the ad-level entity —
@@ -204,6 +205,7 @@ export async function campaignFunnel(
       -- can still match.
       select ${identityKey('t')} as id,
              coalesce(ca.campaign_key, lower(t.utm_campaign)) as campaign_key,
+             t.touch_type,
              t.occurred_at
       from marketing.attribution_touch t
       ${identityJoin('t')}
@@ -225,14 +227,31 @@ export async function campaignFunnel(
       group by 1, 2
     ),
     ev_attr as (
-      -- Last campaign touch within the lookback before the stage event wins.
+      -- Attribution is ALWAYS identity-matched (ta.id = ev.id) — the same user
+      -- (or identity_link-stitched session) on both the touch and the event.
+      -- That link is the PROOF; nothing here attributes by time proximity across
+      -- identities.
+      --   Primary: last campaign touch at/before the event (true last-touch).
+      --   Grace fallback: a SERVER-SIDE touch (touch_type in ('touch','lead') —
+      --   the signup/booking forward) stamped up to MIL_TOUCH_GRACE_HOURS AFTER
+      --   the event still counts. Those touches carry the identity's FIRST-TOUCH
+      --   utm and are timestamped at API-call time, not interaction time, so a
+      --   signup landing hours after el_first_open is the user's proven
+      --   acquisition campaign — not a guess. A first_party_click after the event
+      --   is a genuine later visit and is excluded (it could not have caused an
+      --   already-past conversion). Before-event touches always outrank the
+      --   grace fallback.
       select distinct on (ev.id, ev.event_name) ev.event_name, ta.campaign_key
       from ev
       join touches_attr ta
         on ta.id = ev.id
-       and ta.occurred_at <= ev.t
        and ta.occurred_at >= ev.t - make_interval(days => ${lookbackDays}::int)
-      order by ev.id, ev.event_name, ta.occurred_at desc
+       and ta.occurred_at <= ev.t + make_interval(hours => ${graceHours}::int)
+       and (ta.occurred_at <= ev.t or ta.touch_type in ('touch', 'lead'))
+      order by ev.id, ev.event_name,
+        (ta.occurred_at <= ev.t) desc,
+        case when ta.occurred_at <= ev.t then ev.t - ta.occurred_at
+             else ta.occurred_at - ev.t end asc
     ),
     ev_counts as (
       select campaign_key,
@@ -250,13 +269,22 @@ export async function campaignFunnel(
         and ${identityKey('c')} is not null
     ),
     conv_attr as (
+      -- Same identity-proven rule as ev_attr: last touch before the order wins;
+      -- a server-side touch (signup/booking) stamped within the grace window
+      -- after the order is the proven acquisition campaign (first-touch utm,
+      -- late server stamp), while a first_party_click after the order is a later
+      -- visit and excluded.
       select distinct on (conv.conv_id) conv.value_inr, ta.campaign_key
       from conv
       join touches_attr ta
         on ta.id = conv.id
-       and ta.occurred_at <= conv.occurred_at
        and ta.occurred_at >= conv.occurred_at - make_interval(days => ${lookbackDays}::int)
-      order by conv.conv_id, ta.occurred_at desc
+       and ta.occurred_at <= conv.occurred_at + make_interval(hours => ${graceHours}::int)
+       and (ta.occurred_at <= conv.occurred_at or ta.touch_type in ('touch', 'lead'))
+      order by conv.conv_id,
+        (ta.occurred_at <= conv.occurred_at) desc,
+        case when ta.occurred_at <= conv.occurred_at then conv.occurred_at - ta.occurred_at
+             else ta.occurred_at - conv.occurred_at end asc
     ),
     conv_counts as (
       select campaign_key,
