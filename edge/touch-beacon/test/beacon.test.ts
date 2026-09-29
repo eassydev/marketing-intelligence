@@ -83,6 +83,15 @@ describe('sanitizeTouch', () => {
     }
   });
 
+  it('keeps a Meta-length encrypted referrer (~1.2K chars), drops one over 2048', () => {
+    const metaReferrer = `utm_source=apps.facebook.com&utm_campaign=fb4a&utm_content=${'%7B'.repeat(400)}`;
+    expect(metaReferrer.length).toBeGreaterThan(1100);
+    const kept = sanitizeTouch({ session_id: SID, utm_campaign: 'fb4a', referrer: metaReferrer });
+    expect(kept!.referrer).toBe(metaReferrer);
+    const tooLong = sanitizeTouch({ session_id: SID, utm_campaign: 'fb4a', referrer: 'x'.repeat(2049) });
+    expect(tooLong).not.toHaveProperty('referrer');
+  });
+
   it('rejects missing/malformed session_id, bad touch_type, and signal-less bodies', () => {
     expect(sanitizeTouch({ utm_campaign: 'x' })).toBeNull();
     expect(sanitizeTouch({ session_id: 'not-a-uuid', utm_campaign: 'x' })).toBeNull();
@@ -136,6 +145,31 @@ describe('handleRequest', () => {
       ctx(),
     );
     expect(bad.status).toBe(403);
+  });
+
+  it('accepts a body with a 2K referrer and a 2K landing_url (under the 8K cap)', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const c = ctx();
+    const res = await handleRequest(
+      post(
+        {
+          session_id: SID,
+          utm_campaign: 'fb4a',
+          referrer: 'r'.repeat(2000),
+          landing_url: 'https://eassy.life/' + 'l'.repeat(1980),
+        },
+        null,
+      ),
+      makeEnv(),
+      c,
+    );
+    expect(res.status).toBe(204);
+    await c.flush();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const forwarded = JSON.parse(init.body as string) as Record<string, string>;
+    expect(forwarded.referrer).toHaveLength(2000);
+    expect(forwarded).not.toHaveProperty('raw');
   });
 
   it('429 when the rate limiter trips; 400 on garbage; 404 off-path', async () => {

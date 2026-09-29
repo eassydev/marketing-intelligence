@@ -16,7 +16,11 @@ const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'ut
 /** Click/cookie identifiers — forwarded ONLY with consent. */
 const CLICK_ID_KEYS = ['gclid', 'fbclid', 'gbraid', 'wbraid', 'fbc', 'fbp'] as const;
 
-const MAX_ID_LEN = 512; // click ids / urls
+const MAX_ID_LEN = 512; // click ids
+// landing_url / referrer. Meta's app-ad Play referrer carries its encrypted
+// campaign payload and runs ~1.1-1.3K chars; a 512 cap silently dropped every
+// one, which is why Meta installs could never join their campaign.
+const MAX_URL_LEN = 2048;
 const MAX_UTM_LEN = 256;
 const OCCURRED_AT_MAX_AGE_MS = 30 * 24 * 3600 * 1000; // 30d back
 const OCCURRED_AT_MAX_SKEW_MS = 10 * 60 * 1000; // 10min forward
@@ -88,9 +92,9 @@ export function sanitizeTouch(input: unknown): SanitizedTouch | null {
   // A touch with no campaign signal whatsoever is noise — reject.
   if (!hasSignal) return null;
 
-  const landingUrl = cleanString(body.landing_url, MAX_ID_LEN);
+  const landingUrl = cleanString(body.landing_url, MAX_URL_LEN);
   if (landingUrl) out.landing_url = landingUrl;
-  const referrer = cleanString(body.referrer, MAX_ID_LEN);
+  const referrer = cleanString(body.referrer, MAX_URL_LEN);
   if (referrer) out.referrer = referrer;
 
   // Client clocks lie: accept occurred_at only within [now-30d, now+10min],

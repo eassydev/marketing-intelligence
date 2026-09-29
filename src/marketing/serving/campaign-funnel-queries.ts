@@ -32,6 +32,14 @@ import type { AppKind } from '../../shared/types/app.js';
  *   never double-counts a conversion across campaigns.
  * - installs / registrations / add_to_cart count each identity once per stage
  *   (first occurrence in-window); orders/revenue count every conversion row.
+ * - Installs have a second, stronger source: Meta app-ad install referrers
+ *   decrypted at ingest (GCM-authenticated, so unforgeable without the app's
+ *   key), deduped on the envelope nonce, timed at the ad click, credited to
+ *   the campaign inside the envelope with no lookback — and counted even when
+ *   the user never logs in (el_first_open only reaches MIL after login). An
+ *   identity with a referrer install is dated and credited by the referrer
+ *   only, so one install can never land in two adjacent windows. Counts stay
+ *   one per identity per stage.
  * - `medium` filters touches on utm_medium; ad platforms carry no medium, so a
  *   medium filter restricts the universe to touch-bearing campaigns.
  */
@@ -241,7 +249,7 @@ export async function campaignFunnel(
       --   is a genuine later visit and is excluded (it could not have caused an
       --   already-past conversion). Before-event touches always outrank the
       --   grace fallback.
-      select distinct on (ev.id, ev.event_name) ev.event_name, ta.campaign_key
+      select distinct on (ev.id, ev.event_name) ev.id, ev.event_name, ta.campaign_key
       from ev
       join touches_attr ta
         on ta.id = ev.id
@@ -253,9 +261,54 @@ export async function campaignFunnel(
         case when ta.occurred_at <= ev.t then ev.t - ta.occurred_at
              else ta.occurred_at - ev.t end asc
     ),
+    meta_installs as (
+      -- One row per decrypted install referrer (the install touch and the
+      -- registration forward re-send the same envelope, so dedupe on its
+      -- nonce), preferring a user identity over an unstitched session.
+      select distinct on (nonce) id, t, campaign_key
+      from (
+        select ${identityKey('t')} as id,
+               -- click_ts is outside the GCM-authenticated data: re-check it
+               -- here too so a bad stored value can never break the query.
+               coalesce(
+                 case when jsonb_typeof(t.raw -> 'meta_install_referrer' -> 'click_ts') = 'number'
+                       and (t.raw -> 'meta_install_referrer' ->> 'click_ts')::numeric
+                           between 1500000000 and extract(epoch from t.received_at)
+                      then to_timestamp((t.raw -> 'meta_install_referrer' ->> 'click_ts')::double precision)
+                 end,
+                 t.occurred_at) as t,
+               coalesce(ca.campaign_key, lower(t.utm_campaign)) as campaign_key,
+               t.raw -> 'meta_install_referrer' ->> 'nonce' as nonce,
+               t.id as touch_id
+        from marketing.attribution_touch t
+        ${identityJoin('t')}
+        left join campaign_alias ca on ca.alias = lower(t.utm_campaign)
+        where t.app = ${f.app}
+          and t.raw -> 'meta_install_referrer' ->> 'nonce' is not null
+      ) mi
+      order by nonce, (id like 'sid:%'), touch_id, id
+    ),
+    install_attr as (
+      select distinct on (id) id, campaign_key
+      from (
+        select mi.id, mi.campaign_key, 0 as prio, mi.t
+          from meta_installs mi
+         where ${window(sql`mi.t`, f)}
+        union all
+        select ea.id, ea.campaign_key, 1 as prio, null::timestamptz as t
+          from ev_attr ea
+         where ea.event_name = 'el_first_open'
+           and not exists (select 1 from meta_installs m where m.id = ea.id)
+      ) i
+      order by id, prio, t, campaign_key
+    ),
+    install_counts as (
+      select campaign_key, count(*)::float8 as installs
+      from install_attr
+      group by 1
+    ),
     ev_counts as (
       select campaign_key,
-             count(*) filter (where event_name = 'el_first_open')::float8 as installs,
              count(*) filter (where event_name = 'el_signup')::float8 as registrations,
              count(*) filter (where event_name = 'el_add_to_cart')::float8 as add_to_cart
       from ev_attr
@@ -297,13 +350,14 @@ export async function campaignFunnel(
            c.impressions,
            c.ad_clicks,
            c.first_party_clicks,
-           coalesce(ec.installs, 0)::float8 as installs,
+           coalesce(ic.installs, 0)::float8 as installs,
            coalesce(ec.registrations, 0)::float8 as registrations,
            coalesce(ec.add_to_cart, 0)::float8 as add_to_cart,
            coalesce(cc.orders, 0)::float8 as orders,
            coalesce(cc.revenue_inr, 0)::float8 as revenue_inr,
            c.ad_spend_inr
     from campaigns c
+    left join install_counts ic on ic.campaign_key = c.campaign_key
     left join ev_counts ec on ec.campaign_key = c.campaign_key
     left join conv_counts cc on cc.campaign_key = c.campaign_key
     order by c.first_party_clicks + coalesce(c.ad_spend_inr, 0) desc, c.utm_campaign`);

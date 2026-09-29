@@ -116,6 +116,17 @@ export const envSchema = z
     .transform((v) => v === 'true'),
   META_CAPI_DATASET_ID: z.string().default('1717873222070120'), // existing pixel id
   META_CAPI_TEST_EVENT_CODE: z.string().optional(), // Meta "Test Events" mode
+  // App Dashboard → Settings → Basic → Android → "Install Referrer Decryption
+  // Key". Meta app-ad installs arrive as utm_campaign=fb4a|ig4a with the real
+  // campaign/ad set/ad AES-256-GCM-encrypted in utm_content; without this key
+  // they can never join Meta spend. Unset = decryption skipped.
+  META_INSTALL_REFERRER_KEY: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z
+      .string()
+      .regex(/^[0-9a-fA-F]{64}$/, 'META_INSTALL_REFERRER_KEY must be 64 hex chars (32-byte AES-256 key)')
+      .optional(),
+  ),
 
   // Store / GBP review ingestion (Phase 6). Each source is skipped with a log
   // line when its creds are absent (mirrors the geo engine factory) — all
