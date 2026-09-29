@@ -25,7 +25,8 @@ interface Ctx {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-const MAX_BODY_BYTES = 4096;
+// Room for a 2K referrer plus a 2K landing_url and the utm/click-id fields.
+const MAX_BODY_BYTES = 8192;
 
 function corsHeaders(origin: string | null, env: Env): Record<string, string> {
   const allowed = env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
