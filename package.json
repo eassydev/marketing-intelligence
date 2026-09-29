@@ -12,6 +12,7 @@
     "check-env": "tsx scripts/check-env.ts",
     "seed": "tsx scripts/seed.ts",
     "seed:segments": "tsx scripts/seed-segments.ts",
+    "backfill:meta-referrer": "tsx scripts/meta-referrer-backfill.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -28,6 +28,15 @@ describe('parseEnv', () => {
     expect(() => parseEnv(without)).toThrowError(/DATABASE_URL/);
   });
 
+  it('META_INSTALL_REFERRER_KEY: empty means unset, a malformed key fails fast', () => {
+    expect(parseEnv({ ...base, META_INSTALL_REFERRER_KEY: '' }).META_INSTALL_REFERRER_KEY).toBeUndefined();
+    const key = 'ab'.repeat(32);
+    expect(parseEnv({ ...base, META_INSTALL_REFERRER_KEY: key }).META_INSTALL_REFERRER_KEY).toBe(key);
+    expect(() => parseEnv({ ...base, META_INSTALL_REFERRER_KEY: 'not-hex' })).toThrowError(
+      /META_INSTALL_REFERRER_KEY/,
+    );
+  });
+
   it('rejects a too-short ingest token', () => {
     expect(() => parseEnv({ ...base, INTERNAL_INGEST_TOKEN: 'short' })).toThrowError(
       /INTERNAL_INGEST_TOKEN/,
