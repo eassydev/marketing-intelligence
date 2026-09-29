@@ -35,6 +35,8 @@ const C = {
   longGap: campaign(4),
   replay: campaign(5),
   backfill: campaign(6),
+  boundary: campaign(7),
+  badTs: campaign(8),
 };
 
 let container: StartedPostgreSqlContainer;
@@ -226,6 +228,42 @@ describe('Meta install referrer (integration)', () => {
     expect((await funnelRow(c))?.installs).toBe(1);
   });
 
+  it('a click and first open in adjacent months count once, in the click month', async () => {
+    const c = C.boundary;
+    await writeTouch({
+      ...installTouch('mir-edge', metaReferrer('fb4a', c, { clickTs: Date.parse('2026-06-30T23:50:00Z') / 1000 }), '2026-07-01T00:20:00Z'),
+      user_id: 9007,
+      consent: false,
+    });
+    await db.insert(schema.appEvent).values({
+      app: APP,
+      eventId: randomUUID(),
+      eventName: 'el_first_open',
+      occurredAt: new Date('2026-07-01T00:10:00Z'),
+      sessionId: 'mir-edge',
+      userId: 9007,
+    });
+    expect((await funnelRow(c))?.installs).toBe(1);
+    const july = (await campaignFunnel({ app: APP, from: '2026-07-01', to: '2026-07-31' })).find(
+      (r) => r.utm_campaign === c.name,
+    );
+    expect(july?.installs ?? 0).toBe(0);
+  });
+
+  it('a stored out-of-range click_ts never breaks the funnel', async () => {
+    const c = C.badTs;
+    await db.insert(schema.attributionTouch).values({
+      app: APP,
+      occurredAt: new Date('2026-06-14T10:00:00Z'),
+      touchType: 'touch',
+      sessionId: 'mir-bad-ts',
+      utmCampaign: c.campaignId,
+      consent: true,
+      raw: { meta_install_referrer: { nonce: 'ab'.repeat(12), click_ts: 1e21 } },
+    });
+    expect((await funnelRow(c))?.installs).toBe(1); // falls back to occurred_at
+  });
+
   it('leaves an undecryptable referrer on its generic label', async () => {
     await writeTouch(
       installTouch('mir-wrong-key', metaReferrer('fb4a', C.unregistered, { keyHex: randomBytes(32).toString('hex') }), '2026-06-12T08:55:00Z'),
@@ -239,6 +277,15 @@ describe('Meta install referrer (integration)', () => {
     const c = C.backfill;
     // Rows stored before decryption existed (inserted directly, bypassing the writer).
     await db.insert(schema.attributionTouch).values([
+      {
+        app: APP,
+        occurredAt: new Date('2026-06-13T07:00:00Z'),
+        touchType: 'touch',
+        sessionId: 'mir-backfill-wrong-key',
+        utmCampaign: 'fb4a',
+        referrer: metaReferrer('fb4a', c, { keyHex: randomBytes(32).toString('hex') }),
+        consent: false,
+      },
       {
         app: APP,
         occurredAt: new Date('2026-06-13T08:55:00Z'),
@@ -264,7 +311,7 @@ describe('Meta install referrer (integration)', () => {
     const dry = await runBackfill();
     expect(dry.apply).toBe(false);
     expect(dry.byCampaign[c.campaignId]).toBe(1);
-    expect(dry.byStatus.decrypt_failed).toBeGreaterThanOrEqual(1); // the wrong-key row
+    expect(dry.byStatus.decrypt_failed).toBeGreaterThanOrEqual(1); // its own wrong-key row
     expect(dry.propagated).toBe(0); // the decrypted row isn't written in a dry run
     expect((await touchesFor('mir-backfill')).every((r) => r.utm_campaign === 'fb4a')).toBe(true);
 

@@ -40,8 +40,12 @@ function encryptEnvelope(plaintext: object | string, keyHex = KEY): { data: stri
   };
 }
 
-function playReferrer(label: 'fb4a' | 'ig4a', source: { data: string; nonce: string }): string {
-  const utmContent = JSON.stringify({ app: APP_ID, t: 1788258089, source });
+function playReferrer(
+  label: 'fb4a' | 'ig4a',
+  source: { data: string; nonce: string },
+  t: unknown = 1788258089,
+): string {
+  const utmContent = JSON.stringify({ app: APP_ID, t, source });
   const host = label === 'fb4a' ? 'apps.facebook.com' : 'apps.instagram.com';
   return `utm_source=${host}&utm_campaign=${label}&utm_content=${encodeURIComponent(utmContent)}`;
 }
@@ -63,6 +67,18 @@ describe('extractMetaEnvelope', () => {
     expect(env!.app).toBe(String(APP_ID));
     expect(env!.clickTs).toBe(1788258089);
     expect(env!.nonce).toHaveLength(12);
+  });
+
+  it.each([
+    ['huge (1e21)', 1e21],
+    ['microseconds (1.7e15)', 1.7e15],
+    ['fractional', 1788258089.5],
+    ['before 2017', 1000],
+    ['a string', '1788258089'],
+  ])('drops an implausible click time: %s', (_label, t) => {
+    const env = extractMetaEnvelope({ referrer: playReferrer('fb4a', encryptEnvelope(DECODED), t) });
+    expect(env).not.toBeNull();
+    expect(env!.clickTs).toBeNull();
   });
 
   it('accepts the envelope passed directly as utm_content', () => {
@@ -132,6 +148,12 @@ describe('quoteLongIntegers', () => {
     expect(quoteLongIntegers('{"a":120248378036410475,"b":12,"c":"99999999999999999"}')).toBe(
       '{"a":"120248378036410475","b":12,"c":"99999999999999999"}',
     );
+  });
+
+  it('leaves long decimals and exponents intact', () => {
+    const json = '{"x":0.30000000000000004,"y":1.5e1234567890123456,"z":12345678901234567e2}';
+    expect(quoteLongIntegers(json)).toBe(json);
+    expect(() => JSON.parse(quoteLongIntegers('{"x":0.30000000000000004}'))).not.toThrow();
   });
 
   it('leaves decimals, exponents, negatives and escaped quotes alone', () => {

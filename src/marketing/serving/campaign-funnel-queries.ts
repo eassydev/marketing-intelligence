@@ -34,10 +34,12 @@ import type { AppKind } from '../../shared/types/app.js';
  *   (first occurrence in-window); orders/revenue count every conversion row.
  * - Installs have a second, stronger source: Meta app-ad install referrers
  *   decrypted at ingest (GCM-authenticated, so unforgeable without the app's
- *   key). One install per envelope nonce, timed at the ad click, credited to
+ *   key), deduped on the envelope nonce, timed at the ad click, credited to
  *   the campaign inside the envelope with no lookback — and counted even when
  *   the user never logs in (el_first_open only reaches MIL after login). An
- *   identity with both sources is one install; the referrer's campaign wins.
+ *   identity with a referrer install is dated and credited by the referrer
+ *   only, so one install can never land in two adjacent windows. Counts stay
+ *   one per identity per stage.
  * - `medium` filters touches on utm_medium; ad platforms carry no medium, so a
  *   medium filter restricts the universe to touch-bearing campaigns.
  */
@@ -266,8 +268,14 @@ export async function campaignFunnel(
       select distinct on (nonce) id, t, campaign_key
       from (
         select ${identityKey('t')} as id,
+               -- click_ts is outside the GCM-authenticated data: re-check it
+               -- here too so a bad stored value can never break the query.
                coalesce(
-                 to_timestamp((t.raw -> 'meta_install_referrer' ->> 'click_ts')::double precision),
+                 case when jsonb_typeof(t.raw -> 'meta_install_referrer' -> 'click_ts') = 'number'
+                       and (t.raw -> 'meta_install_referrer' ->> 'click_ts')::numeric
+                           between 1500000000 and extract(epoch from t.received_at)
+                      then to_timestamp((t.raw -> 'meta_install_referrer' ->> 'click_ts')::double precision)
+                 end,
                  t.occurred_at) as t,
                coalesce(ca.campaign_key, lower(t.utm_campaign)) as campaign_key,
                t.raw -> 'meta_install_referrer' ->> 'nonce' as nonce,
@@ -278,20 +286,21 @@ export async function campaignFunnel(
         where t.app = ${f.app}
           and t.raw -> 'meta_install_referrer' ->> 'nonce' is not null
       ) mi
-      order by nonce, (id like 'sid:%'), touch_id
+      order by nonce, (id like 'sid:%'), touch_id, id
     ),
     install_attr as (
       select distinct on (id) id, campaign_key
       from (
-        select mi.id, mi.campaign_key, 0 as prio
+        select mi.id, mi.campaign_key, 0 as prio, mi.t
           from meta_installs mi
          where ${window(sql`mi.t`, f)}
         union all
-        select ea.id, ea.campaign_key, 1 as prio
+        select ea.id, ea.campaign_key, 1 as prio, null::timestamptz as t
           from ev_attr ea
          where ea.event_name = 'el_first_open'
+           and not exists (select 1 from meta_installs m where m.id = ea.id)
       ) i
-      order by id, prio
+      order by id, prio, t, campaign_key
     ),
     install_counts as (
       select campaign_key, count(*)::float8 as installs

@@ -21,6 +21,10 @@ const KEY_RE = /^[0-9a-f]{64}$/i;
 const NUMERIC_ID_RE = /^\d{1,32}$/;
 /** Meta ids are 17-18 digits — beyond Number.MAX_SAFE_INTEGER as bare JSON numbers. */
 const LONG_INTEGER_DIGITS = 16;
+/** `t` sits OUTSIDE the GCM-authenticated data, so it is only trusted as a
+ * plausible whole-second click time: after 2017, not after now (+10 min skew). */
+const MIN_CLICK_TS = 1_500_000_000;
+const MAX_CLICK_SKEW_S = 600;
 
 /** Decoded fields worth keeping. All are ad-structure metadata — no user data. */
 const KEPT_FIELDS = [
@@ -71,9 +75,12 @@ function utmContentFromReferrer(referrer: string): string | null {
   }
 }
 
+const NUMBER_TOKEN_RE = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+
 /**
- * Wrap bare integer tokens of 16+ digits in quotes so JSON.parse keeps them
- * exact. Only tokens outside string literals are touched.
+ * Wrap bare non-negative integer tokens of 16+ digits in quotes so JSON.parse
+ * keeps them exact. Whole number tokens are matched, so decimals and exponents
+ * pass through untouched, and nothing inside string literals is changed.
  */
 export function quoteLongIntegers(json: string): string {
   let out = '';
@@ -98,18 +105,15 @@ export function quoteLongIntegers(json: string): string {
       i += 1;
       continue;
     }
-    if (ch >= '0' && ch <= '9') {
-      let j = i;
-      while (j < json.length && json[j]! >= '0' && json[j]! <= '9') j += 1;
-      const digits = json.slice(i, j);
-      const continuesNumber = j < json.length && /[.eE]/.test(json[j]!);
-      const negative = out.endsWith('-');
-      out +=
-        digits.length >= LONG_INTEGER_DIGITS && !continuesNumber && !negative
-          ? `"${digits}"`
-          : digits;
-      i = j;
-      continue;
+    if (ch === '-' || (ch >= '0' && ch <= '9')) {
+      NUMBER_TOKEN_RE.lastIndex = i;
+      const token = NUMBER_TOKEN_RE.exec(json)?.[0];
+      if (token) {
+        const pureInteger = /^\d+$/.test(token);
+        out += pureInteger && token.length >= LONG_INTEGER_DIGITS ? `"${token}"` : token;
+        i += token.length;
+        continue;
+      }
     }
     out += ch;
     i += 1;
@@ -121,6 +125,12 @@ function asId(value: unknown): string | null {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
   if (typeof value === 'string' && NUMERIC_ID_RE.test(value)) return value;
   return null;
+}
+
+function plausibleClickTs(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+  const maxTs = Math.floor(Date.now() / 1000) + MAX_CLICK_SKEW_S;
+  return value >= MIN_CLICK_TS && value <= maxTs ? value : null;
 }
 
 function mentionsEnvelope(value: string | null | undefined): boolean {
@@ -155,7 +165,7 @@ export function extractMetaEnvelope(input: {
     if (typeof data !== 'string' || typeof nonce !== 'string') continue;
     if (nonce.length !== NONCE_HEX_LEN || !HEX_RE.test(nonce)) continue;
     if (data.length % 2 !== 0 || data.length <= TAG_BYTES * 2 || !HEX_RE.test(data)) continue;
-    const clickTs = typeof obj.t === 'number' && Number.isFinite(obj.t) ? obj.t : null;
+    const clickTs = plausibleClickTs(obj.t);
     return {
       app: asId(obj.app),
       clickTs,
